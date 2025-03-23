@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body {
+      font-family: sans-serif;
+      width: 260px;
+      margin: 10px;
+      background: #f5faff;
+      color: #003366;
+    }
+    .header {
+    background-color: #004080;
+    height: 38px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: -10px -10px 12px -10px; /* padding 보정용 */
+    }
+    .version-tag {
+    position: absolute;
+    top: 10px;
+    right: 13px;
+    font-size: 14px;
+    color: #999;
+    font-family: sans-serif;
+    }
+    .header h4 {
+    margin: 0;
+    font-size: 14px;
+    color: white;
+    font-weight: bold;
+    font-family: sans-serif;
+    }
+    label {
+    display: block;
+    font-family: sans-serif !important;
+    font-size: 10px;
+    font-weight: normal;
+    color: #003366;
+    }
+    .input-wrapper {
+      position: relative;
+      margin-bottom: 10px;
+      font-family: sans-serif !important;
+    }
+    .input-wrapper input {
+      width: 100%;
+      padding: 6px 30px 6px 6px;
+      border: 1px solid #3b82f6;
+      border-radius: 4px;
+      font-size: 13px;
+      box-sizing: border-box;
+      font-family: sans-serif !important;
+    }
+    .eye-icon {
+      position: absolute;
+      top: 50%;
+      right: 6px;
+      transform: translateY(-50%);
+      cursor: pointer;
+      user-select: none;
+      font-family: inherit;
+    }
+    .eye-icon svg {
+      width: 18px;
+      height: 18px;
+      stroke: #007bff;
+    }
+    .checkbox-group {
+      display: flex;
+      align-items: center;
+      margin-bottom: 10px;
+      font-family: sans-serif !important;
+    }
+    .checkbox-group input[type="checkbox"] {
+      transform: scale(1.2);
+      margin-right: 8px;
+    }
+    .checkbox-group label {
+      font-size: 13px;
+      color: #003366;
+      font-weight: 550;
+      cursor: pointer;
+      user-select: none;
+      font-family: sans-serif !important;
+    }
+    .toast {
+    position: fixed;
+    bottom: 6px;
+    right: 8px;
+    background-color: #004080;
+    color: white;
+    padding: 6px 8px;
+    font-size: 12px;
+    border-radius: 6px;
+    opacity: 0;
+    transition: opacity 0.4s ease;
+    z-index: 999;
+    }
+    .toast.show {
+    opacity: 1;
+    }
+
+  </style>
+</head>
+<body>
+    <div class="header">
+        <h4>PLATO 자동 로그인</h4>
+        <div class="version-tag">ver.1</div>
+      </div>
+
+  <label for="userId">아이디</label>
+  <div class="input-wrapper">
+    <input type="text" id="userId" placeholder="아이디 입력">
+  </div>
+
+  <label for="userPw">비밀번호</label>
+  <div class="input-wrapper">
+    <input type="password" id="userPw" placeholder="비밀번호 입력">
+    <span class="eye-icon" id="togglePw">
+      <!-- 감은 눈 (eye-off) -->
+      <svg id="eyeOff" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+        <path d="M17.94 17.94L2.06 2.06"></path>
+        <path d="M10.94 10.94a3 3 0 0 1-4.24-4.24"></path>
+        <path d="M1 1l22 22"></path>
+        <path d="M10 4a8 8 0 0 1 7.45 4.9"></path>
+        <path d="M4.55 4.55A8 8 0 0 0 2 12a8 8 0 0 0 12.9 6.32"></path>
+      </svg>
+      <!-- 뜬 눈 (eye) -->
+      <svg id="eyeOn" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24" style="display: none;">
+        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+        <circle cx="12" cy="12" r="3"></circle>
+      </svg>
+    </span>
+  </div>
+
+  <div class="checkbox-group">
+    <input type="checkbox" id="popupToggle">
+    <label for="popupToggle">Auto Login</label>
+  </div>
+  
+  <div id="toast" class="toast">저장되었습니다</div>
+</body>
+<script src="popup.js"></script>
+</html>
