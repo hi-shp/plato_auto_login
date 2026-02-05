@@ -31,7 +31,7 @@
 
 ## 3. 주요 기능 명세
 
-![image02](./images/image03.png)
+![image02](./images/image02.png)
 
 ### A. 통합 자동 로그인 (Auto-Login)
 * **PLATO**: 접속 즉시 로그인 폼을 감지하여 저장된 계정 정보를 주입하고 로그인을 완료합니다.
