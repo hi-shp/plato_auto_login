@@ -33,12 +33,16 @@ const attemptLogin = () => {
 
       if (host.includes("onestop.pusan.ac.kr")) {
         if (!data.hjsToggle) return;
+        
+        const loginArea = document.querySelector('#global_login');
+        if (loginArea && loginArea.innerText.includes("로그아웃")) return;
+
         if (path.includes("/main") || path.includes("/index.do")) return;
         if (href.includes("/error/entrypoint")) {
           window.location.replace("https://onestop.pusan.ac.kr/login");
           return;
         }
-        const loginArea = document.querySelector('#global_login');
+        
         if (loginArea && !loginArea.dataset.done) {
           loginArea.dataset.done = "1";
           window.dispatchEvent(new CustomEvent("RUN_PNU_FUNC", { detail: { type: "ONESTOP_SSO" } }));
