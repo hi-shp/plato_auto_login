@@ -11,7 +11,11 @@ document.addEventListener("DOMContentLoaded", () => {
         bbitsId: document.getElementById("bbitsId"),
         bbitsPw: document.getElementById("bbitsPw"),
         bbitsToggle: document.getElementById("bbitsToggle"),
-        bbitsPopupClose: document.getElementById("bbitsPopupClose")
+        bbitsPopupClose: document.getElementById("bbitsPopupClose"),
+        ebookId: document.getElementById("ebookId"),
+        ebookPw: document.getElementById("ebookPw"),
+        ebookToggle: document.getElementById("ebookToggle"),
+        ebookPopupClose: document.getElementById("ebookPopupClose")
     };
 
     chrome.storage.local.get(Object.keys(fields), (data) => {
@@ -42,7 +46,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     };
 
-    [fields.userId, fields.userPw, fields.hjsId, fields.hjsPw, fields.bbitsId, fields.bbitsPw].forEach(el => {
+    [fields.userId, fields.userPw, fields.hjsId, fields.hjsPw, fields.bbitsId, fields.bbitsPw, fields.ebookId, fields.ebookPw].forEach(el => {
         el?.addEventListener("input", save);
     });
 
@@ -74,6 +78,7 @@ document.addEventListener("DOMContentLoaded", () => {
     setupEyeEffect("togglePlatoPw", fields.userPw);
     setupEyeEffect("toggleHjsPw", fields.hjsPw);
     setupEyeEffect("toggleBbitsPw", fields.bbitsPw);
+    setupEyeEffect("toggleEbookPw", fields.ebookPw);
 
     document.getElementById("githubLink")?.addEventListener("click", (e) => {
         e.preventDefault();

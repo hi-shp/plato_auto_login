@@ -6,7 +6,8 @@ const attemptLogin = () => {
   chrome.storage.local.get([
     "hjsId", "hjsPw", "hjsToggle", "hjsPopupClose",
     "userId", "userPw", "popupToggle", "platoPopupClose",
-    "bbitsId", "bbitsPw", "bbitsToggle", "bbitsPopupClose"
+    "bbitsId", "bbitsPw", "bbitsToggle", "bbitsPopupClose",
+    "ebookId", "ebookPw", "ebookToggle", "ebookPopupClose"
   ], (data) => {
     
     if (host.includes("onestop.pusan.ac.kr") || host.includes("login.pusan.ac.kr")) {
@@ -84,6 +85,28 @@ const attemptLogin = () => {
         if (univ) univ.click();
         u.value = data.bbitsId || "";
         p.value = data.bbitsPw || "";
+        b.click();
+      }
+    }
+
+    if (host === "ebook.pusan.ac.kr") {
+      if (data.ebookPopupClose) {
+        // 추후 전자도서관 사이트에 팝업창 생기면 그때 로직 넣기
+      }
+
+      if (!data.ebookToggle) return;
+
+      if (document.querySelector('a[href*=logout')) return;
+
+      const form = document.forms['left_Login_Frm'];
+      const u = form?.querySelector('input[name="user_id"]');
+      const p = form?.querySelector('input[name="user_pw"]');
+      const b = document.getElementById('left_Login_Click');
+
+      if (form && u && p && b && !u.dataset.done) {
+        u.dataset.done = "1";
+        u.value = data.ebookId || "";
+        p.value = data.ebookPw || "";
         b.click();
       }
     }

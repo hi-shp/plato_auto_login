@@ -1,14 +1,15 @@
 {
   "manifest_version": 3,
   "name": "부산대학교 자동 로그인",
-  "version": "2026.02.11",
-  "description": "PLATO & 학지시 & 공유대학 자동 로그인 프로그램",
+  "version": "2026.02.12",
+  "description": "PLATO & 학지시 & 공유대학 & 전자도서관 자동 로그인 프로그램",
   "permissions": ["storage"],
   "host_permissions": [
     "https://plato.pusan.ac.kr/*",
     "https://login.pusan.ac.kr/*",
     "https://onestop.pusan.ac.kr/*",
-    "https://www.bbits.ac.kr/*"
+    "https://www.bbits.ac.kr/*",
+    "https://ebook.pusan.ac.kr/*"
   ],
   "action": {
     "default_popup": "popup.html",
@@ -21,7 +22,8 @@
         "https://plato.pusan.ac.kr/*",
         "https://login.pusan.ac.kr/*",
         "https://onestop.pusan.ac.kr/*",
-        "https://www.bbits.ac.kr/*"
+        "https://www.bbits.ac.kr/*",
+        "https://ebook.pusan.ac.kr/*"
       ],
       "js": ["content.js"],
       "run_at": "document_end",
