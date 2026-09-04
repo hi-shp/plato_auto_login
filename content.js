@@ -133,17 +133,20 @@ const PlatoCalendar = {
                    document.querySelector('#page-content');
     if (!target) return;
 
+    const now = new Date();
+    const defaultYear = now.getFullYear();
+    const defaultMonth = now.getMonth() + 1;
+
     const widget = document.createElement('div');
     widget.id = 'plato-calendar-widget';
     widget.innerHTML = `
       <div class="plato-cal-header">
-        <div class="plato-cal-title-area">
-          <h2 class="plato-cal-title">학업 캘린더 · <span id="plato-cal-month-text">이번 달</span></h2>
-          <div class="plato-cal-stats">
-            <span class="plato-stat-chip plato-stat-pending" id="plato-stat-pending">미완료 0</span>
-            <span class="plato-stat-chip plato-stat-done" id="plato-stat-done">완료 0</span>
-            <span class="plato-stat-chip plato-stat-passed" id="plato-stat-passed">지난 일정 0</span>
-          </div>
+        <div class="plato-cal-header-left">
+          <span class="plato-cal-brand-title">플라토 캘린더</span>
+        </div>
+        <div class="plato-cal-center">
+          <span class="plato-cal-year" id="plato-cal-year-text">${defaultYear}년</span>
+          <h2 class="plato-cal-month" id="plato-cal-month-text">${defaultMonth}월</h2>
         </div>
         <div class="plato-cal-controls">
           <button type="button" class="plato-filter-btn" id="plato-filter-toggle">
@@ -595,24 +598,14 @@ const PlatoCalendar = {
 
   render() {
     if (!this.cachedData) return;
-    const { monthTitle, days, activities } = this.cachedData;
+    const { curYear, curMonth, days } = this.cachedData;
 
-    // 1. 헤더 업데이트
+    // 1. 헤더 업데이트 (2026년 위에, 9월 크게 중앙)
+    const yearEl = document.querySelector('#plato-cal-year-text');
+    if (yearEl) yearEl.innerText = `${curYear}년`;
+
     const monthEl = document.querySelector('#plato-cal-month-text');
-    if (monthEl) monthEl.innerText = monthTitle || '이번 달';
-
-    const pendingCount = activities.filter(a => a.statusType === 'pending').length;
-    const doneCount = activities.filter(a => a.statusType === 'done').length;
-    const passedCount = activities.filter(a => a.statusType === 'passed').length;
-
-    const pendingEl = document.querySelector('#plato-stat-pending');
-    if (pendingEl) pendingEl.innerText = `미완료 ${pendingCount}`;
-
-    const doneEl = document.querySelector('#plato-stat-done');
-    if (doneEl) doneEl.innerText = `완료 ${doneCount}`;
-
-    const passedEl = document.querySelector('#plato-stat-passed');
-    if (passedEl) passedEl.innerText = `지난 일정 ${passedCount}`;
+    if (monthEl) monthEl.innerText = `${curMonth}월`;
 
     // 2. 대형 캘린더 그리드 렌더링
     this.renderLargeDaysGrid(days);
@@ -1007,10 +1000,16 @@ const attemptLogin = () => {
         if (!path.includes("/login/index.php") && !path.includes("/login/")) {
           if (!document.body.dataset.loginRedirecting) {
             document.body.dataset.loginRedirecting = "1";
-            const targetUrl = "https://plato.pusan.ac.kr/local/ubion/allcourse/regular/index.php";
-            const loginUrl = (path === "/" || path === "/index.php" || path === "")
-              ? `https://plato.pusan.ac.kr/login/index.php?wantsurl=${encodeURIComponent(targetUrl)}`
-              : `https://plato.pusan.ac.kr/login/index.php?wantsurl=${encodeURIComponent(href)}`;
+            const isHome = path === "/" || path === "/index.php" || path === "";
+            let loginUrl = `https://plato.pusan.ac.kr/login/index.php?wantsurl=${encodeURIComponent(href)}`;
+            if (isHome) {
+              if (data.platoCalendarToggle !== false) {
+                const targetUrl = "https://plato.pusan.ac.kr/local/ubion/allcourse/regular/index.php";
+                loginUrl = `https://plato.pusan.ac.kr/login/index.php?wantsurl=${encodeURIComponent(targetUrl)}`;
+              } else {
+                loginUrl = "https://plato.pusan.ac.kr/login/index.php";
+              }
+            }
             window.location.href = loginUrl;
             return;
           }
@@ -1022,8 +1021,9 @@ const attemptLogin = () => {
         sessionStorage.removeItem('plato_login_failed');
 
         // 플라토 메인 홈(/ 또는 /index.php)인 경우 자동으로 교과과정 페이지로 이동
+        // 캘린더 기능이 OFF인 경우 홈→교과과정 리다이렉트도 비활성화
         const isHome = path === "/" || path === "/index.php" || path === "";
-        if (isHome) {
+        if (isHome && data.platoCalendarToggle !== false) {
           const now = Date.now();
           const lastRedirect = parseInt(sessionStorage.getItem('plato_last_course_redirect') || '0', 10);
           // 무한 루프 방지: 3초 이내 중복 리다이렉트 방지
