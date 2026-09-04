@@ -44,6 +44,7 @@ const PlatoCalendar = {
           <div class="plato-cal-stats">
             <span class="plato-stat-chip plato-stat-pending" id="plato-stat-pending">미완료 0</span>
             <span class="plato-stat-chip plato-stat-done" id="plato-stat-done">완료 0</span>
+            <span class="plato-stat-chip plato-stat-passed" id="plato-stat-passed">지난 일정 0</span>
           </div>
         </div>
         <div class="plato-cal-controls">
@@ -69,7 +70,7 @@ const PlatoCalendar = {
       <!-- 클릭 시 나타나는 특정 날짜 상세 활동 패널 -->
       <div class="plato-cal-detail-panel" id="plato-calendar-detail-panel">
         <div class="plato-detail-header">
-          <span class="plato-detail-title" id="plato-detail-title-text">마감 예정 과제 및 강의</span>
+          <span class="plato-detail-title" id="plato-detail-title-text">일정 상세</span>
           <button type="button" class="plato-detail-close-btn" id="plato-detail-close-btn">전체 보기</button>
         </div>
         <div class="plato-detail-cards-grid" id="plato-detail-cards-grid">
@@ -194,6 +195,14 @@ const PlatoCalendar = {
     const calDoc = new DOMParser().parseFromString(calText, 'text/html');
 
     const monthTitle = calDoc.querySelector('h2.current, h2')?.innerText?.trim() || '이번 달 일정';
+    let curYear = new Date().getFullYear();
+    let curMonth = new Date().getMonth() + 1;
+
+    const yMatch = monthTitle.match(/([0-9]{4})\s*년?/);
+    if (yMatch) curYear = parseInt(yMatch[1], 10);
+
+    const mMatch = monthTitle.match(/([0-9]{1,2})\s*월/);
+    if (mMatch) curMonth = parseInt(mMatch[1], 10);
 
     // 2. 교과과정 페이지 DOM에서 수강 강좌 ID 및 이름 추출 (교수님 성/이름 중복 해결 적용)
     const courseLinks = document.querySelectorAll('a[href*="/course/view.php?id="]');
@@ -231,12 +240,21 @@ const PlatoCalendar = {
                 const isCompleted = tr.querySelector('td.td-status')?.innerText.includes('완료') || false;
                 const completedAt = tr.querySelector('td.td-date')?.innerText.trim() || '';
                 const name = tr.querySelector('.name')?.innerText?.trim() || link.innerText.trim();
+
+                let parsedPeriod = '';
+                const text = tr.innerText;
+                const rangeMatch = text.match(/(\d{1,2})[./월]\s*(\d{1,2})일?\s*~\s*(\d{1,2})[./월]\s*(\d{1,2})일?/);
+                if (rangeMatch) {
+                  parsedPeriod = `${parseInt(rangeMatch[1])}월 ${parseInt(rangeMatch[2])}일 ~ ${parseInt(rangeMatch[3])}월 ${parseInt(rangeMatch[4])}일`;
+                }
+
                 info.items[modId] = {
                   modId,
                   name,
                   courseName: c.name,
                   isCompleted,
-                  completedAt
+                  completedAt,
+                  parsedPeriod
                 };
               }
             }
@@ -253,15 +271,26 @@ const PlatoCalendar = {
               if (m) {
                 const modId = m[1];
                 const isCompleted = tr.innerText.includes('제출 완료');
+                let parsedPeriod = '';
+                const text = tr.innerText;
+                const rangeMatch = text.match(/(\d{1,2})[./월]\s*(\d{1,2})일?\s*~\s*(\d{1,2})[./월]\s*(\d{1,2})일?/);
+                if (rangeMatch) {
+                  parsedPeriod = `${parseInt(rangeMatch[1])}월 ${parseInt(rangeMatch[2])}일 ~ ${parseInt(rangeMatch[3])}월 ${parseInt(rangeMatch[4])}일`;
+                }
+
                 if (!info.items[modId]) {
                   info.items[modId] = {
                     modId,
                     name: link.innerText.trim(),
                     courseName: c.name,
-                    isCompleted
+                    isCompleted,
+                    parsedPeriod
                   };
                 } else {
                   info.items[modId].isCompleted = isCompleted;
+                  if (parsedPeriod && !info.items[modId].parsedPeriod) {
+                    info.items[modId].parsedPeriod = parsedPeriod;
+                  }
                 }
               }
             }
@@ -306,6 +335,7 @@ const PlatoCalendar = {
         const statusInfo = globalStatusMap[modId];
         const isCompleted = statusInfo ? statusInfo.isCompleted : false;
         const courseName = statusInfo ? statusInfo.courseName : '교과과정';
+        const parsedPeriod = statusInfo ? statusInfo.parsedPeriod : '';
 
         const ev = {
           day,
@@ -316,7 +346,8 @@ const PlatoCalendar = {
           title,
           href,
           isCompleted,
-          courseName
+          courseName,
+          parsedPeriod
         };
 
         dayEvents.push(ev);
@@ -352,40 +383,55 @@ const PlatoCalendar = {
         if (ev.isCompleted) {
           existing.isCompleted = true;
         }
+        if (ev.parsedPeriod && !existing.parsedPeriod) {
+          existing.parsedPeriod = ev.parsedPeriod;
+        }
       }
     });
 
     const uniqueActivities = Array.from(uniqueMap.values());
 
-    // 오늘 날짜 기준 D-Day 및 기간 텍스트 계산
+    // 오늘 날짜 기준 D-Day 및 기간/상태(완료: 초록, 지난것: 회색, 안된것: 빨강) 계산
     const todayDate = new Date();
     const currentDay = todayDate.getDate();
 
     uniqueActivities.forEach(item => {
       const diff = item.dueDay - currentDay;
       item.dDayDiff = diff;
-      if (diff === 0) {
+
+      // 상태 분류:
+      // 1. 완료: 초록색 ('done')
+      // 2. 지난 것 (마감 지남 & 미완료): 회색 ('passed')
+      // 3. 안된 것 (미완료 & 마감 전/당일): 빨간색 ('pending')
+      if (item.isCompleted) {
+        item.statusType = 'done';
+        item.statusLabel = '완료';
+        item.dDayText = '완료';
+      } else if (diff < 0) {
+        item.statusType = 'passed';
+        item.statusLabel = '기한 지남';
+        item.dDayText = `${Math.abs(diff)}일 전 마감`;
+      } else if (diff === 0) {
+        item.statusType = 'pending';
+        item.statusLabel = '오늘 마감';
         item.dDayText = '오늘 마감';
-        item.dDayClass = 'urgent';
       } else if (diff === 1) {
+        item.statusType = 'pending';
+        item.statusLabel = 'D-1';
         item.dDayText = 'D-1';
-        item.dDayClass = 'urgent';
-      } else if (diff > 1 && diff <= 3) {
-        item.dDayText = `D-${diff}`;
-        item.dDayClass = 'soon';
-      } else if (diff > 3) {
-        item.dDayText = `D-${diff}`;
-        item.dDayClass = 'normal';
       } else {
-        item.dDayText = '기한 지남';
-        item.dDayClass = 'passed';
+        item.statusType = 'pending';
+        item.statusLabel = '미완료';
+        item.dDayText = `D-${diff}`;
       }
 
-      // 기간 텍스트 (시작일 ~ 종료일)
-      if (item.startDay && item.startDay !== item.dueDay) {
-        item.periodText = `기간: ${item.startDay}일 ~ ${item.dueDay}일`;
+      // 기간 텍스트 (몇월 며칠부터 몇월 며칠까지)
+      if (item.parsedPeriod) {
+        item.periodText = item.parsedPeriod;
+      } else if (item.startDay && item.startDay !== item.dueDay) {
+        item.periodText = `${curMonth}월 ${item.startDay}일 ~ ${curMonth}월 ${item.dueDay}일`;
       } else {
-        item.periodText = `마감: ${item.dueDay}일`;
+        item.periodText = `${curMonth}월 ${item.dueDay}일 마감`;
       }
     });
 
@@ -398,14 +444,19 @@ const PlatoCalendar = {
       dayDueActivitiesMap[act.dueDay].push(act);
     });
 
-    // 정렬: 미완료 우선, 마감 임박 순
+    // 정렬: 안된 것(빨강) -> 지난 것(회색) -> 완료(초록), 마감 임박 순
     uniqueActivities.sort((a, b) => {
-      if (a.isCompleted !== b.isCompleted) return a.isCompleted ? 1 : -1;
+      const rank = { pending: 1, passed: 2, done: 3 };
+      if (rank[a.statusType] !== rank[b.statusType]) {
+        return rank[a.statusType] - rank[b.statusType];
+      }
       return a.dueDay - b.dueDay;
     });
 
     return {
       monthTitle,
+      curYear,
+      curMonth,
       days,
       activities: uniqueActivities,
       dayDueActivitiesMap
@@ -420,15 +471,18 @@ const PlatoCalendar = {
     const monthEl = document.querySelector('#plato-cal-month-text');
     if (monthEl) monthEl.innerText = monthTitle || '이번 달';
 
-    const totalCount = activities.length;
-    const doneCount = activities.filter(a => a.isCompleted).length;
-    const pendingCount = totalCount - doneCount;
+    const pendingCount = activities.filter(a => a.statusType === 'pending').length;
+    const doneCount = activities.filter(a => a.statusType === 'done').length;
+    const passedCount = activities.filter(a => a.statusType === 'passed').length;
 
     const pendingEl = document.querySelector('#plato-stat-pending');
     if (pendingEl) pendingEl.innerText = `미완료 ${pendingCount}`;
 
     const doneEl = document.querySelector('#plato-stat-done');
     if (doneEl) doneEl.innerText = `완료 ${doneCount}`;
+
+    const passedEl = document.querySelector('#plato-stat-passed');
+    if (passedEl) passedEl.innerText = `지난 일정 ${passedCount}`;
 
     // 2. 대형 캘린더 그리드 렌더링
     this.renderLargeDaysGrid(days);
@@ -469,30 +523,37 @@ const PlatoCalendar = {
       if (dayOfWeek === 6) cell.classList.add('weekend-sat');
 
       const dueActs = dayDueMap[d.day] || [];
-      const totalDueCount = dueActs.length;
-      const pendingDueCount = dueActs.filter(a => !a.isCompleted).length;
+      const pendingCount = dueActs.filter(a => a.statusType === 'pending').length;
+      const doneCount = dueActs.filter(a => a.statusType === 'done').length;
+      const passedCount = dueActs.filter(a => a.statusType === 'passed').length;
 
-      // 상단 행: 일자 숫자 + 심플 숫자 뱃지
-      let countBadgeHtml = '';
-      if (totalDueCount > 0) {
-        if (pendingDueCount > 0) {
-          countBadgeHtml = `<span class="plato-day-count-badge pending">${totalDueCount}</span>`;
-        } else {
-          countBadgeHtml = `<span class="plato-day-count-badge done">✓${totalDueCount}</span>`;
-        }
+      // 상태별 셀 하이라이트 (안된 것 있으면 빨간 액센트, 전부 완료면 초록 액센트)
+      if (pendingCount > 0) {
+        cell.classList.add('has-pending');
+      } else if (doneCount > 0 && passedCount === 0) {
+        cell.classList.add('all-done');
       }
 
-      // 셀 내부 칩들 (1줄 말줄임, 셀 너비 절대 변경 없음)
+      // 상단 행: 일자 숫자 + 직관적인 큰 색상 뱃지
+      let countBadgeHtml = '';
+      if (pendingCount > 0) {
+        countBadgeHtml = `<span class="plato-day-badge badge-pending">${pendingCount}</span>`;
+      } else if (doneCount > 0) {
+        countBadgeHtml = `<span class="plato-day-badge badge-done">✓</span>`;
+      } else if (passedCount > 0) {
+        countBadgeHtml = `<span class="plato-day-badge badge-passed">${passedCount}</span>`;
+      }
+
+      // 셀 내부 칩들: 색상이 크고 직관적으로 드러남 (안된것: 빨강, 지난것: 회색, 완료: 초록)
       let chipsHtml = '';
-      if (totalDueCount > 0) {
+      if (dueActs.length > 0) {
         const maxDisplay = 2;
         const visibleActs = dueActs.slice(0, maxDisplay);
-        const remainCount = totalDueCount - maxDisplay;
+        const remainCount = dueActs.length - maxDisplay;
 
         const chipsList = visibleActs.map(act => {
-          const chipClass = act.isCompleted ? 'done' : 'pending';
           return `
-            <span class="plato-event-chip ${chipClass}" title="[${act.courseName}] ${act.title}">
+            <span class="plato-event-chip chip-${act.statusType}" title="[${act.courseName}] ${act.title}">
               [${act.type}] ${act.title}
             </span>
           `;
@@ -544,40 +605,38 @@ const PlatoCalendar = {
 
     if (this.selectedDay !== null) {
       items = items.filter(a => a.dueDay === this.selectedDay);
-      if (titleText) titleText.innerText = `${this.selectedDay}일 마감 일정 (${items.length})`;
+      if (titleText) titleText.innerText = `${this.selectedDay}일 일정 (${items.length})`;
       if (closeBtn) closeBtn.style.display = 'inline-block';
     } else {
-      if (titleText) titleText.innerText = `이번 달 전체 마감 일정 (${items.length})`;
+      if (titleText) titleText.innerText = `전체 일정 (${items.length})`;
       if (closeBtn) closeBtn.style.display = 'none';
     }
 
     if (this.showOnlyPending) {
-      items = items.filter(a => !a.isCompleted);
+      items = items.filter(a => a.statusType === 'pending');
     }
 
     if (items.length === 0) {
       grid.innerHTML = `
         <div class="plato-tasks-empty">
-          <span>${this.selectedDay !== null ? `${this.selectedDay}일에` : '선택한 조건에'} 마감 일정이 없습니다.</span>
+          <span>${this.selectedDay !== null ? `${this.selectedDay}일에` : '선택한 조건에'} 일정이 없습니다.</span>
         </div>
       `;
       return;
     }
 
+    // 카드 렌더링: 두꺼운 상태 바(좌측 6px), 큰 상태 뱃지, 기간(몇월몇일 ~ 몇월몇일)
     grid.innerHTML = items.map(item => {
-      const statusClass = item.isCompleted ? 'done' : 'pending';
-      const statusText = item.isCompleted ? '완료' : '미제출';
-
       return `
-        <a href="${item.href}" class="plato-task-card" target="_blank" rel="noopener noreferrer">
+        <a href="${item.href}" class="plato-task-card card-${item.statusType}" target="_blank" rel="noopener noreferrer">
           <div class="plato-task-card-header">
             <span class="plato-task-course">[${item.type}] ${item.courseName}</span>
-            <span class="plato-task-status-badge ${statusClass}">${statusText}</span>
+            <span class="plato-task-status-badge badge-${item.statusType}">${item.statusLabel}</span>
           </div>
           <span class="plato-task-name" title="${item.title}">${item.title}</span>
           <div class="plato-task-meta">
             <span class="plato-task-period">${item.periodText}</span>
-            <span class="plato-task-dday ${item.dDayClass}">${item.dDayText}</span>
+            <span class="plato-task-dday dday-${item.statusType}">${item.dDayText}</span>
           </div>
         </a>
       `;
