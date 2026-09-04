@@ -42,36 +42,28 @@
 }
 
 .plato-cal-brand-title {
-  font-size: 14px;
-  font-weight: 700;
-  color: #334155;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  padding: 5px 12px;
-  border-radius: 8px;
-  letter-spacing: -0.3px;
+  font-size: 17px;
+  font-weight: 800;
+  color: #0f172a;
+  letter-spacing: -0.5px;
   display: inline-flex;
   align-items: center;
+  user-select: none;
 }
 
 .plato-github-link {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: #64748b;
-  padding: 5px;
-  border-radius: 8px;
+  color: #94a3b8;
+  padding: 4px;
   text-decoration: none;
-  border: 1px solid transparent;
-  transition: all 0.2s ease;
+  transition: color 0.15s ease;
   line-height: 1;
 }
 
 .plato-github-link:hover {
-  color: #0f172a;
-  background: #f1f5f9;
-  border-color: #e2e8f0;
-  transform: translateY(-1px);
+  color: #000000;
 }
 
 .plato-github-icon {
@@ -154,20 +146,32 @@
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
   text-align: center;
-  font-size: 13px;
-  font-weight: 800;
-  color: #64748b;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 8px 0;
   margin-bottom: 8px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid #f1f5f9;
+  font-size: 14px;
+  font-weight: 800;
+  color: #1e293b;
+  letter-spacing: -0.2px;
+}
+
+.plato-cal-weekdays span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
 }
 
 .plato-cal-weekdays span:first-child {
   color: #ef4444; /* 일 */
+  font-weight: 900;
 }
 
 .plato-cal-weekdays span:last-child {
   color: #2563eb; /* 토 */
+  font-weight: 900;
 }
 
 /* Strictly Fixed 7-Column Grid: minmax(0, 1fr) ensures content never stretches columns */
@@ -538,6 +542,59 @@
   color: #64748b;
   font-size: 12.5px;
   grid-column: 1 / -1;
+}
+
+/* ==========================================================================
+   COLLAPSIBLE / EXPANDABLE TOGGLE BAR (가로로 긴 하단 접기/펴기 바)
+   ========================================================================== */
+.plato-cal-toggle-bar {
+  width: 100%;
+  margin-top: 14px;
+  padding: 8px 16px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+  color: #475569;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: -0.2px;
+  transition: all 0.2s ease;
+  user-select: none;
+}
+
+.plato-cal-toggle-bar:hover {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+  color: #0f172a;
+}
+
+.plato-toggle-bar-icon {
+  display: block;
+  transition: transform 0.25s ease;
+}
+
+/* 접힌 상태 (Collapsed) */
+#plato-calendar-widget.collapsed .plato-cal-collapsible-body {
+  display: none;
+}
+
+#plato-calendar-widget.collapsed .plato-cal-header {
+  padding-bottom: 10px;
+  margin-bottom: 0;
+  border-bottom: none;
+}
+
+#plato-calendar-widget.collapsed .plato-cal-toggle-bar {
+  margin-top: 6px;
+}
+
+#plato-calendar-widget.collapsed .plato-toggle-bar-icon {
+  transform: rotate(180deg);
 }
 
 @media (max-width: 768px) {

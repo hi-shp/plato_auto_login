@@ -177,28 +177,38 @@ const PlatoCalendar = {
         </div>
       </div>
 
-      <!-- 고정 7열 대형 월간 캘린더 그리드 -->
-      <div class="plato-cal-grid-card">
-        <div class="plato-cal-weekdays">
-          <span>일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span>
+      <div class="plato-cal-collapsible-body" id="plato-cal-collapsible-body">
+        <!-- 고정 7열 대형 월간 캘린더 그리드 -->
+        <div class="plato-cal-grid-card">
+          <div class="plato-cal-weekdays">
+            <span>일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span>
+          </div>
+          <div class="plato-large-days-grid" id="plato-large-days-grid">
+            <!-- 일자 셀들이 여기에 렌더링됨 -->
+          </div>
         </div>
-        <div class="plato-large-days-grid" id="plato-large-days-grid">
-          <!-- 일자 셀들이 여기에 렌더링됨 -->
-        </div>
-      </div>
 
-      <!-- 클릭 시 나타나는 특정 날짜 상세 활동 패널 -->
-      <div class="plato-cal-detail-panel" id="plato-calendar-detail-panel">
-        <div class="plato-detail-header">
-          <span class="plato-detail-title" id="plato-detail-title-text">일정 상세</span>
-          <button type="button" class="plato-detail-close-btn" id="plato-detail-close-btn">전체 보기</button>
-        </div>
-        <div class="plato-detail-cards-grid" id="plato-detail-cards-grid">
-          <div class="plato-tasks-empty">
-            <span>데이터를 불러오는 중입니다...</span>
+        <!-- 클릭 시 나타나는 특정 날짜 상세 활동 패널 -->
+        <div class="plato-cal-detail-panel" id="plato-calendar-detail-panel">
+          <div class="plato-detail-header">
+            <span class="plato-detail-title" id="plato-detail-title-text">일정 상세</span>
+            <button type="button" class="plato-detail-close-btn" id="plato-detail-close-btn">전체 보기</button>
+          </div>
+          <div class="plato-detail-cards-grid" id="plato-detail-cards-grid">
+            <div class="plato-tasks-empty">
+              <span>데이터를 불러오는 중입니다...</span>
+            </div>
           </div>
         </div>
       </div>
+
+      <!-- 가로로 긴 하단 접기/펼치기 토글 바 -->
+      <button type="button" class="plato-cal-toggle-bar" id="plato-cal-toggle-bar" title="달력 접기/펼치기">
+        <span class="plato-toggle-bar-label" id="plato-toggle-bar-label">달력 접기</span>
+        <svg class="plato-toggle-bar-icon" id="plato-toggle-bar-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="18 15 12 9 6 15"></polyline>
+        </svg>
+      </button>
     `;
 
     target.insertBefore(widget, target.firstChild);
@@ -213,6 +223,36 @@ const PlatoCalendar = {
       document.querySelectorAll('.plato-large-day-cell.selected').forEach(c => c.classList.remove('selected'));
       this.renderDetailPanel();
     });
+
+    // 저장된 접기/펼치기 상태 복원
+    chrome.storage.local.get(['platoCalendarCollapsed'], (res) => {
+      if (res.platoCalendarCollapsed) {
+        this.setCollapsed(true);
+      }
+    });
+
+    // 접기/펼치기 토글 바 클릭 이벤트
+    document.querySelector('#plato-cal-toggle-bar')?.addEventListener('click', () => {
+      const widgetEl = document.querySelector('#plato-calendar-widget');
+      const isCurrentlyCollapsed = widgetEl?.classList.contains('collapsed');
+      this.setCollapsed(!isCurrentlyCollapsed);
+    });
+  },
+
+  setCollapsed(collapsed) {
+    const widget = document.querySelector('#plato-calendar-widget');
+    const label = document.querySelector('#plato-toggle-bar-label');
+    if (!widget) return;
+
+    if (collapsed) {
+      widget.classList.add('collapsed');
+      if (label) label.innerText = '달력 펼치기';
+    } else {
+      widget.classList.remove('collapsed');
+      if (label) label.innerText = '달력 접기';
+    }
+
+    chrome.storage.local.set({ platoCalendarCollapsed: collapsed });
   },
 
   loadCachedData() {
