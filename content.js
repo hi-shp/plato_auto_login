@@ -8,6 +8,8 @@ const PlatoCalendar = {
   showOnlyPending: false,
   cachedData: null,
 
+  WEEKDAYS_KO: ['일', '월', '화', '수', '목', '금', '토'],
+
   cleanCourseName(rawName) {
     if (!rawName) return '교과과정';
     let clean = rawName.replace(/^[0-9]+년\s+[0-9]+학기\s+교과과정\s+학부\s*/, '');
@@ -16,16 +18,112 @@ const PlatoCalendar = {
     return clean.replace(/\s+/g, ' ').trim();
   },
 
+  getWeekdayStr(year, month, day) {
+    if (!day) return '';
+    const d = new Date(year, month - 1, day);
+    return this.WEEKDAYS_KO[d.getDay()] || '';
+  },
+
+  formatPeriodText(parsedPeriod, year, month, startDay, dueDay) {
+    if (parsedPeriod) {
+      return parsedPeriod.replace(/(\d{1,2})월\s*(\d{1,2})일/g, (match, m, d) => {
+        const mNum = parseInt(m, 10);
+        const dNum = parseInt(d, 10);
+        const w = this.getWeekdayStr(year, mNum, dNum);
+        return `${mNum}월 ${dNum}일(${w})`;
+      });
+    }
+
+    if (startDay && startDay !== dueDay) {
+      const startW = this.getWeekdayStr(year, month, startDay);
+      const dueW = this.getWeekdayStr(year, month, dueDay);
+      return `${month}월 ${startDay}일(${startW}) ~ ${month}월 ${dueDay}일(${dueW})`;
+    } else {
+      const dueW = this.getWeekdayStr(year, month, dueDay);
+      return `${month}월 ${dueDay}일(${dueW}) 마감`;
+    }
+  },
+
+  checkIsCompleted(statusText, trElement) {
+    const text = (statusText || trElement?.innerText || '').trim();
+    if (!text) return false;
+
+    // 1. 명백한 미완료/부정 키워드 우선 체크 -> 무조건 false (기존 "미완료".includes("완료") 버그 원천 해결)
+    if (/미완료|미제출|미학습|미응시|미수강|결석|진행중|학습전|학습\s*전|미달|부족/.test(text)) {
+      return false;
+    }
+
+    // 2. 결석/X 표시 체크 (단독 X 또는 결석 X)
+    if (/\bX\b|[✕✖❌]/.test(text) && !/[O⭕]/.test(text)) {
+      return false;
+    }
+
+    // 3. 진도율 체크 (예: 0%, 50%, 80% 등 100% 미만이면 미완료)
+    const percentMatch = text.match(/(\d{1,3})\s*%/);
+    if (percentMatch) {
+      const pct = parseInt(percentMatch[1], 10);
+      if (pct < 100) return false;
+      if (pct >= 100) return true;
+    }
+
+    // 4. 완료/출석/제출 긍정 키워드 체크
+    if (/제출\s*완료|학습\s*완료|응시\s*완료|출석|출석인정/.test(text)) {
+      return true;
+    }
+    // "미"가 앞에 붙지 않은 순수 "완료"
+    if (/(?:^|[^미])완료/.test(text)) {
+      return true;
+    }
+    // 출석 인정 O 표시
+    if (/\bO\b|[O⭕]/.test(text)) {
+      return true;
+    }
+
+    // 5. DOM 클래스 체크 (녹색 성공 클래스 또는 빨간색 실패 클래스)
+    if (trElement) {
+      if (trElement.querySelector('.text-danger, .label-danger, .badge-danger, .danger')) {
+        return false;
+      }
+      if (trElement.querySelector('.text-success, .label-success, .badge-success, .success, [src*="completion-auto-y"], [src*="completion-manual-y"]')) {
+        return true;
+      }
+    }
+
+    return false;
+  },
+
   init() {
     if (window !== window.top) return;
     const path = window.location.pathname;
     if (!path.includes('/local/ubion/allcourse/regular/index.php') && !path.includes('/local/ubion/allcourse/')) return;
 
-    // 중복 삽입 방지
-    if (document.querySelector('#plato-calendar-widget')) return;
+    // 팝업 설정(platoCalendarToggle) 확인 (기본값: true)
+    chrome.storage.local.get(['platoCalendarToggle'], (res) => {
+      if (res.platoCalendarToggle === false) return; // 캘린더 기능 OFF 설정 시 미표시
 
-    this.mountWidgetSkeleton();
-    this.loadCachedData();
+      // 중복 삽입 방지
+      if (document.querySelector('#plato-calendar-widget')) return;
+
+      this.mountWidgetSkeleton();
+      this.loadCachedData();
+    });
+
+    // 팝업에서 실시간 온오프 토글 시 즉시 동적 반영
+    if (!this._storageListenerRegistered) {
+      this._storageListenerRegistered = true;
+      chrome.storage.onChanged.addListener((changes, area) => {
+        if (area === 'local' && changes.platoCalendarToggle) {
+          if (changes.platoCalendarToggle.newValue === false) {
+            document.querySelector('#plato-calendar-widget')?.remove();
+          } else {
+            if (!document.querySelector('#plato-calendar-widget')) {
+              this.mountWidgetSkeleton();
+              this.loadCachedData();
+            }
+          }
+        }
+      });
+    }
   },
 
   mountWidgetSkeleton() {
@@ -231,13 +329,19 @@ const PlatoCalendar = {
         if (actRes.ok) {
           const actText = await actRes.text();
           const actDoc = new DOMParser().parseFromString(actText, 'text/html');
-          actDoc.querySelectorAll('tr[data-modname]').forEach(tr => {
-            const link = tr.querySelector('td.td-activity a[href*="id="]');
+          actDoc.querySelectorAll('tr[data-modname], tr').forEach(tr => {
+            const link = tr.querySelector('td.td-activity a[href*="id="]') ||
+                         tr.querySelector('a[href*="/mod/vod/view.php?id="]') ||
+                         tr.querySelector('a[href*="/mod/assign/view.php?id="]') ||
+                         tr.querySelector('a[href*="/mod/quiz/view.php?id="]') ||
+                         tr.querySelector('a[href*="/mod/"]');
             if (link) {
               const m = link.href.match(/id=([0-9]+)/);
               if (m) {
                 const modId = m[1];
-                const isCompleted = tr.querySelector('td.td-status')?.innerText.includes('완료') || false;
+                const statusTd = tr.querySelector('td.td-status') || tr.querySelector('td:nth-child(4)') || tr.querySelector('td:last-child');
+                const statusText = statusTd ? statusTd.innerText.trim() : tr.innerText;
+                const isCompleted = this.checkIsCompleted(statusText, tr);
                 const completedAt = tr.querySelector('td.td-date')?.innerText.trim() || '';
                 const name = tr.querySelector('.name')?.innerText?.trim() || link.innerText.trim();
 
@@ -270,7 +374,7 @@ const PlatoCalendar = {
               const m = link.href.match(/id=([0-9]+)/);
               if (m) {
                 const modId = m[1];
-                const isCompleted = tr.innerText.includes('제출 완료');
+                const isCompleted = this.checkIsCompleted(tr.innerText, tr);
                 let parsedPeriod = '';
                 const text = tr.innerText;
                 const rangeMatch = text.match(/(\d{1,2})[./월]\s*(\d{1,2})일?\s*~\s*(\d{1,2})[./월]\s*(\d{1,2})일?/);
@@ -303,8 +407,15 @@ const PlatoCalendar = {
     }));
 
     const globalStatusMap = {};
+    const nameStatusMap = {};
     statusResults.forEach(sr => {
       Object.assign(globalStatusMap, sr.items);
+      Object.values(sr.items).forEach(item => {
+        if (item.name) {
+          const cleanName = item.name.replace(/\s+/g, '');
+          nameStatusMap[`${sr.courseName}_${cleanName}`] = item;
+        }
+      });
     });
 
     // 4. 캘린더 날짜별 이벤트 파싱
@@ -324,17 +435,38 @@ const PlatoCalendar = {
       td.querySelectorAll('li[data-region="event-item"]').forEach(li => {
         const comp = li.getAttribute('data-event-component') || '';
         const eventId = li.getAttribute('data-event-id') || li.querySelector('a[data-event-id]')?.getAttribute('data-event-id') || '';
-        const a = li.querySelector('a[href*="/mod/"]');
+        const a = li.querySelector('a[href*="/mod/"]') || li.querySelector('a');
         const href = a ? a.href : '';
         let title = a ? (a.getAttribute('title') || a.innerText) : '';
         title = title.replace(/&nbsp;/g, ' ').replace(/기한$/, '').trim();
 
         const modIdMatch = href.match(/id=([0-9]+)/);
-        const modId = modIdMatch ? modIdMatch[1] : '';
+        let modId = modIdMatch ? modIdMatch[1] : '';
+        if (href.includes('/calendar/view.php')) {
+          modId = ''; // 캘린더 링크 ID는 이벤트 ID이므로 cmid로 오인 방지
+        }
 
-        const statusInfo = globalStatusMap[modId];
+        // 강좌명 추론: 캘린더 이벤트 DOM의 강좌 링크 또는 텍스트
+        const courseLink = li.closest('td')?.querySelector('.course-name, a[href*="/course/view.php"]') ||
+                           li.querySelector('a[href*="/course/view.php"]');
+        let inferredCourseName = courseLink ? this.cleanCourseName(courseLink.innerText) : '';
+
+        // modId 및 강좌명+제목 매핑으로 정확한 활동 상태 획득
+        let statusInfo = modId ? globalStatusMap[modId] : null;
+        if (!statusInfo && title) {
+          const cleanT = title.replace(/\s+/g, '');
+          // 우선 추론된 강좌명으로 탐색
+          if (inferredCourseName && nameStatusMap[`${inferredCourseName}_${cleanT}`]) {
+            statusInfo = nameStatusMap[`${inferredCourseName}_${cleanT}`];
+          } else {
+            // 전체 강좌 중 타이틀이 일치하는 활동 탐색
+            const matchedKey = Object.keys(nameStatusMap).find(k => k.endsWith(`_${cleanT}`));
+            if (matchedKey) statusInfo = nameStatusMap[matchedKey];
+          }
+        }
+
         const isCompleted = statusInfo ? statusInfo.isCompleted : false;
-        const courseName = statusInfo ? statusInfo.courseName : '교과과정';
+        const courseName = statusInfo ? statusInfo.courseName : (inferredCourseName || '교과과정');
         const parsedPeriod = statusInfo ? statusInfo.parsedPeriod : '';
 
         const ev = {
@@ -362,10 +494,13 @@ const PlatoCalendar = {
       });
     });
 
-    // 5. 활동별 시작일 및 마감일(기간) 산출 및 유니크 활동 목록 구성
+    // 5. 활동별 시작일 및 마감일(기간) 산출 및 유니크 활동 목록 구성 (강좌별 독립 키 적용으로 오염 방지)
     const uniqueMap = new Map();
     rawEvents.forEach(ev => {
-      const key = ev.modId || ev.eventId || ev.title;
+      const key = ev.modId 
+        ? `${ev.courseName}_mod_${ev.modId}` 
+        : `${ev.courseName}_title_${ev.title}_${ev.day}`;
+
       if (!uniqueMap.has(key)) {
         uniqueMap.set(key, {
           ...ev,
@@ -380,8 +515,9 @@ const PlatoCalendar = {
         if (ev.day > existing.dueDay) {
           existing.dueDay = ev.day;
         }
-        if (ev.isCompleted) {
-          existing.isCompleted = true;
+        // 둘 중 하나라도 완료 상태가 아니면 미완료로 정확히 유지 (오탐 방지)
+        if (ev.isCompleted !== undefined && !ev.isCompleted) {
+          existing.isCompleted = false;
         }
         if (ev.parsedPeriod && !existing.parsedPeriod) {
           existing.parsedPeriod = ev.parsedPeriod;
@@ -425,14 +561,8 @@ const PlatoCalendar = {
         item.dDayText = `D-${diff}`;
       }
 
-      // 기간 텍스트 (몇월 며칠부터 몇월 며칠까지)
-      if (item.parsedPeriod) {
-        item.periodText = item.parsedPeriod;
-      } else if (item.startDay && item.startDay !== item.dueDay) {
-        item.periodText = `${curMonth}월 ${item.startDay}일 ~ ${curMonth}월 ${item.dueDay}일`;
-      } else {
-        item.periodText = `${curMonth}월 ${item.dueDay}일 마감`;
-      }
+      // 기간 텍스트: 몇월 며칠(요일)부터 몇월 며칠(요일)까지
+      item.periodText = this.formatPeriodText(item.parsedPeriod, curYear, curMonth, item.startDay, item.dueDay);
     });
 
     // 각 날짜(day)별 최종 마감 활동 매핑

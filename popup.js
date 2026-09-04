@@ -4,6 +4,7 @@ document.addEventListener("DOMContentLoaded", () => {
         userPw: document.getElementById("userPw"),
         popupToggle: document.getElementById("popupToggle"),
         platoPopupClose: document.getElementById("platoPopupClose"),
+        platoCalendarToggle: document.getElementById("platoCalendarToggle"),
         hjsId: document.getElementById("hjsId"),
         hjsPw: document.getElementById("hjsPw"),
         hjsToggle: document.getElementById("hjsToggle"),
@@ -18,7 +19,12 @@ document.addEventListener("DOMContentLoaded", () => {
         Object.keys(fields).forEach(key => {
             if (!fields[key]) return;
             if (fields[key].type === "checkbox") {
-                fields[key].checked = !!data[key];
+                // platoCalendarToggle은 기본값이 true
+                if (key === "platoCalendarToggle") {
+                    fields[key].checked = data[key] !== false;
+                } else {
+                    fields[key].checked = !!data[key];
+                }
             } else {
                 fields[key].value = data[key] || "";
             }
