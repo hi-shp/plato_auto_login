@@ -7,12 +7,12 @@
   all: initial;
   display: block;
   font-family: -apple-system, BlinkMacSystemFont, "Pretendard", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  margin: 16px 0 28px 0;
+  margin: 12px 0 20px 0;
   background: #ffffff;
   border-radius: 14px;
   border: 1px solid #e2e8f0;
   box-shadow: 0 4px 16px rgba(15, 23, 42, 0.04);
-  padding: 20px 24px;
+  padding: 8px 10px 16px 10px;
   box-sizing: border-box;
   color: #0f172a;
   position: relative;
