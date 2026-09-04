@@ -1,7 +1,8 @@
 {
   "manifest_version": 3,
   "name": "부산대학교 자동 로그인",
-  "version": "2026.09.04",
+  "version": "2026.9.4",
+  "version_name": "2026.09.04",
   "description": "PLATO & 학지시 & 공유대학 자동 로그인 프로그램",
   "permissions": ["storage"],
   "host_permissions": [
