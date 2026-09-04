@@ -825,7 +825,7 @@ const PlatoCalendar = {
       const curMonth = this.cachedData.curMonth;
       const d = new Date(curYear, curMonth - 1, this.selectedDay);
       const dayName = this.WEEKDAYS_KO[d.getDay()] || '';
-      if (titleText) titleText.innerText = `${curMonth}월 ${this.selectedDay}일 (${dayName}) 마감 일정 (${items.length})`;
+      if (titleText) titleText.innerText = `${curMonth}월 ${this.selectedDay}일(${dayName}) 마감 일정 (${items.length})`;
       if (closeBtn) closeBtn.style.display = 'inline-block';
     } else {
       if (titleText) titleText.innerText = `전체 마감 일정 (${items.length})`;
