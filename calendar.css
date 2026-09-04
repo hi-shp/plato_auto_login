@@ -24,31 +24,26 @@
 }
 
 /* ==========================================================================
-   TOP TOGGLE BAR (가로로 긴 맨 위 접기/펼치기 토글 바)
+   TOP BAR (상단 헤더 바)
    ========================================================================== */
+.plato-cal-top-bar,
 .plato-cal-toggle-bar {
   width: 100%;
-  display: grid;
-  grid-template-columns: auto 1fr auto;
+  display: flex;
+  justify-content: space-between;
   align-items: center;
   padding: 8px 14px;
   background: #f8fafc;
   border: 1px solid #e2e8f0;
   border-radius: 10px;
-  cursor: pointer;
   user-select: none;
-  transition: all 0.2s ease;
 }
 
-.plato-cal-toggle-bar:hover {
-  background: #f1f5f9;
-  border-color: #cbd5e1;
-}
-
+.plato-top-bar-left,
 .plato-toggle-bar-left {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
 
 .plato-cal-brand-title {
@@ -59,47 +54,48 @@
   display: inline-flex;
   align-items: center;
   user-select: none;
+  cursor: pointer;
+  transition: color 0.15s ease;
 }
 
-.plato-github-link {
+.plato-cal-brand-title:hover {
+  color: #0284c7;
+}
+
+/* 세모 모양 토글 버튼 */
+.plato-cal-toggle-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: #94a3b8;
-  padding: 4px;
-  text-decoration: none;
-  transition: color 0.15s ease;
-  line-height: 1;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
 }
 
-.plato-github-link:hover {
-  color: #000000;
-}
-
-.plato-github-icon {
-  display: block;
-}
-
-.plato-toggle-bar-center {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  color: #64748b;
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: -0.2px;
-}
-
-.plato-cal-toggle-bar:hover .plato-toggle-bar-center {
+.plato-cal-toggle-btn:hover {
+  background: #f1f5f9;
+  border-color: #94a3b8;
   color: #0f172a;
 }
 
-.plato-toggle-bar-icon {
-  display: block;
-  transition: transform 0.25s ease;
+.plato-cal-toggle-btn:active {
+  transform: scale(0.95);
 }
 
+.plato-toggle-triangle {
+  display: block;
+  transform-origin: center;
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.plato-top-bar-right,
 .plato-toggle-bar-right {
   display: flex;
   align-items: center;
@@ -599,19 +595,13 @@
   display: none;
 }
 
-#plato-calendar-widget.collapsed .plato-toggle-bar-icon {
+#plato-calendar-widget.collapsed .plato-toggle-triangle {
   transform: rotate(180deg);
 }
 
 @media (max-width: 768px) {
+  .plato-cal-top-bar,
   .plato-cal-toggle-bar {
-    grid-template-columns: 1fr auto;
-    row-gap: 8px;
-  }
-  .plato-toggle-bar-center {
-    order: 3;
-    grid-column: 1 / -1;
-    border-top: 1px solid #f1f5f9;
-    padding-top: 6px;
+    padding: 8px 10px;
   }
 }

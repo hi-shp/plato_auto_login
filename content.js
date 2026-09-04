@@ -152,23 +152,17 @@ const PlatoCalendar = {
     const widget = document.createElement('div');
     widget.id = 'plato-calendar-widget';
     widget.innerHTML = `
-      <!-- 1. 맨 위 가로로 긴 접기/펼치기 토글 바 -->
-      <div class="plato-cal-toggle-bar" id="plato-cal-toggle-bar" title="플라토 캘린더 접기/펼치기">
-        <div class="plato-toggle-bar-left">
-          <span class="plato-cal-brand-title">플라토 캘린더</span>
-          <a href="https://github.com/hi-shp/plato_auto_login" target="_blank" rel="noopener noreferrer" class="plato-github-link" title="GitHub 저장소 바로가기">
-            <svg class="plato-github-icon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
-              <path fill="currentColor" fill-rule="evenodd" clip-rule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"></path>
+      <!-- 1. 맨 위 상단 헤더 바 -->
+      <div class="plato-cal-top-bar" id="plato-cal-top-bar">
+        <div class="plato-top-bar-left">
+          <span class="plato-cal-brand-title" id="plato-cal-brand-title" title="달력 접기/펼치기">플라토 캘린더</span>
+          <button type="button" class="plato-cal-toggle-btn" id="plato-cal-toggle-btn" title="달력 접기" aria-label="달력 접기/펼치기">
+            <svg class="plato-toggle-triangle" viewBox="0 0 24 24" width="12" height="12" fill="currentColor" aria-hidden="true">
+              <path d="M12 8l6 8H6l6-8z"/>
             </svg>
-          </a>
+          </button>
         </div>
-        <div class="plato-toggle-bar-center">
-          <span class="plato-toggle-bar-label" id="plato-toggle-bar-label">달력 접기</span>
-          <svg class="plato-toggle-bar-icon" id="plato-toggle-bar-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="18 15 12 9 6 15"></polyline>
-          </svg>
-        </div>
-        <div class="plato-toggle-bar-right">
+        <div class="plato-top-bar-right">
           <button type="button" class="plato-refresh-btn" id="plato-refresh-btn" title="일정 새로고침">
             <svg class="plato-btn-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 5px;">
               <polyline points="23 4 23 10 17 10"></polyline>
@@ -220,11 +214,6 @@ const PlatoCalendar = {
       this.handleManualRefresh();
     });
 
-    // 깃허브 링크 클릭 (버블링 방지)
-    document.querySelector('.plato-github-link')?.addEventListener('click', (e) => {
-      e.stopPropagation();
-    });
-
     // 상세 패널 닫기
     document.querySelector('#plato-detail-close-btn')?.addEventListener('click', () => {
       this.selectedDay = null;
@@ -239,28 +228,29 @@ const PlatoCalendar = {
       }
     });
 
-    // 맨 위 가로 바 클릭 시 전체 접기/펼치기 토글
-    document.querySelector('#plato-cal-toggle-bar')?.addEventListener('click', (e) => {
-      if (e.target.closest('#plato-refresh-btn') || e.target.closest('.plato-github-link')) {
-        return;
-      }
+    // 달력 접기/펼치기 토글 (세모 버튼 및 브랜드명 클릭 시만 작동, 배경 클릭 오작동 방지)
+    const toggleCollapse = (e) => {
+      e.stopPropagation();
       const widgetEl = document.querySelector('#plato-calendar-widget');
       const isCurrentlyCollapsed = widgetEl?.classList.contains('collapsed');
       this.setCollapsed(!isCurrentlyCollapsed);
-    });
+    };
+
+    document.querySelector('#plato-cal-toggle-btn')?.addEventListener('click', toggleCollapse);
+    document.querySelector('#plato-cal-brand-title')?.addEventListener('click', toggleCollapse);
   },
 
   setCollapsed(collapsed) {
     const widget = document.querySelector('#plato-calendar-widget');
-    const label = document.querySelector('#plato-toggle-bar-label');
+    const toggleBtn = document.querySelector('#plato-cal-toggle-btn');
     if (!widget) return;
 
     if (collapsed) {
       widget.classList.add('collapsed');
-      if (label) label.innerText = '달력 펼치기';
+      if (toggleBtn) toggleBtn.setAttribute('title', '달력 펼치기');
     } else {
       widget.classList.remove('collapsed');
-      if (label) label.innerText = '달력 접기';
+      if (toggleBtn) toggleBtn.setAttribute('title', '달력 접기');
     }
 
     chrome.storage.local.set({ platoCalendarCollapsed: collapsed });
