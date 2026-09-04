@@ -2,7 +2,7 @@
    PLATO CLEAN CALENDAR & DASHBOARD ENGINE (MINIMALIST & FIXED GRID)
    ========================================================================== */
 const PlatoCalendar = {
-  cooldownSeconds: 60,
+  cooldownSeconds: 5,
   timerId: null,
   selectedDay: null,
   cachedData: null,
@@ -272,7 +272,7 @@ const PlatoCalendar = {
         this.render();
       }
 
-      // 재로그인 직후이거나, 유효한 데이터가 없거나, 쿨다운(60초)이 경과한 경우 즉시 새로고침
+      // 재로그인 직후이거나, 유효한 데이터가 없거나, 쿨다운(5초)이 경과한 경우 즉시 새로고침
       const needForceRefresh = sessionStorage.getItem('plato_need_calendar_refresh') === '1' || !hasValidData;
       if (needForceRefresh) {
         sessionStorage.removeItem('plato_need_calendar_refresh');
