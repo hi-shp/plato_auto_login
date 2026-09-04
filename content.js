@@ -108,14 +108,27 @@ const attemptLogin = () => {
 
       if (!data.popupToggle) return;
 
-      // 2. 로그인 여부 판단
-      const isNotLoggedIn = document.body.classList.contains('notloggedin') || !!document.querySelector('a[href*="/login/index.php"]');
+      // iframe 내부에서는 최상위 페이지의 로그인을 방해하지 않도록 중단
+      if (window !== window.top) return;
+
+      // 2. Moodle 로그인 후 중간 "리다이랙트" 안내 화면 자동 통과
+      if (document.title.includes("리다이랙트") || document.querySelector('#region-main h1')?.innerText.includes("리다이랙트")) {
+        const continueLink = document.querySelector('#region-main a[href*="plato.pusan.ac.kr"]');
+        if (continueLink) {
+          continueLink.click();
+          return;
+        }
+      }
+
+      // 3. 로그인 여부 판단
+      const loginBtnOnPage = document.querySelector('a[href*="/login/index.php"]');
+      const isNotLoggedIn = document.body.classList.contains('notloggedin') || !!loginBtnOnPage;
       const isLoggedIn = !isNotLoggedIn && (
         document.body.classList.contains('loggedin') ||
         !!document.querySelector('.logout, a[href*="/login/logout.php"], .usermenu, .userpicture')
       );
 
-      // 3. 세션 만료 다이얼로그/모달 감지 및 재로그인 처리
+      // 4. 세션 만료 다이얼로그/모달 감지 및 재로그인 처리
       const sessionModal = document.querySelector('.moodle-dialogue, .modal.show, div[role="alertdialog"], div[role="dialog"]');
       if (sessionModal && !sessionModal.dataset.sessionHandled) {
         const modalText = sessionModal.innerText || "";
@@ -132,32 +145,31 @@ const attemptLogin = () => {
         }
       }
 
-      // 4. 로그인 페이지(https://plato.pusan.ac.kr/login/index.php)인 경우: 자동 로그인 수행
+      // 5. 로그인 페이지(https://plato.pusan.ac.kr/login/index.php)인 경우: 자동 로그인 수행
       if (path.includes("/login/index.php") || path.includes("/login/")) {
-        // 로그인 실패 에러 표시 확인 (무한 로그인 루프 방지)
-        const hasError = document.querySelector('.alert-danger, .loginerrors, #username-error:not(:empty)');
-        if (hasError && sessionStorage.getItem('plato_login_attempted')) {
+        // 이미 실제 에러 메시지가 표시된 경우 (비밀번호 불일치 등으로 인한 무한 루프 방지)
+        const errAlert = document.querySelector('.alert-danger, .loginerrors');
+        if (errAlert && errAlert.innerText.trim().length > 0 && sessionStorage.getItem('plato_login_failed')) {
           return;
         }
 
-        // 기본 활성 탭(교내 구성원 SSO 폼 우선) 타겟팅
+        // 기본 활성 탭(교내 구성원 SSO 폼 #form-login-sso) 타겟팅
         const loginForm = document.querySelector('#form-login-sso') ||
                           document.querySelector('.tab-pane.active form') ||
                           document.querySelector('form.tab-content-container') ||
                           document.querySelector('form[action*="login"]');
 
-        if (loginForm && !loginForm.dataset.done) {
+        if (loginForm && !loginForm.dataset.submitting) {
           const u = loginForm.querySelector('#input-username') || loginForm.querySelector('input[name="username"]');
           const p = loginForm.querySelector('#input-password') || loginForm.querySelector('input[name="password"]');
           const b = loginForm.querySelector('.btn-login') ||
                     loginForm.querySelector('button[name="loginbutton"]') ||
-                    loginForm.querySelector('input[name="loginbutton"]') ||
                     loginForm.querySelector('button[type="submit"]');
 
-          if (u && p && b && data.userId && data.userPw) {
-            loginForm.dataset.done = "1";
-            sessionStorage.setItem('plato_login_attempted', '1');
+          if (u && p && data.userId && data.userPw) {
+            loginForm.dataset.submitting = "1";
 
+            // 값 주입 및 이벤트 트리거
             u.value = data.userId;
             u.dispatchEvent(new Event('input', { bubbles: true }));
             u.dispatchEvent(new Event('change', { bubbles: true }));
@@ -166,16 +178,27 @@ const attemptLogin = () => {
             p.dispatchEvent(new Event('input', { bubbles: true }));
             p.dispatchEvent(new Event('change', { bubbles: true }));
 
-            // Bouncer 유효성 검사기 반응 후 로그인 버튼 클릭
+            // 로그인 스피너 표시
+            const spinner = loginForm.querySelector('.spinner-border-logining');
+            if (spinner) spinner.classList.remove('d-none');
+
+            // 1차: 로그인 버튼 클릭 시도
+            if (b) b.click();
+
+            // 2차: 150ms 후에도 페이지 전환이 시작되지 않으면 네이티브 폼 submit 직접 실행
             setTimeout(() => {
-              b.click();
-            }, 50);
+              try {
+                HTMLFormElement.prototype.submit.call(loginForm);
+              } catch (e) {
+                loginForm.submit();
+              }
+            }, 150);
             return;
           }
         }
       }
 
-      // 5. 사이트 접속 시 메인 페이지나 일반 페이지에서 비로그인 상태일 때 로그인 페이지로 자동 전환
+      // 6. 메인 페이지나 일반 페이지에서 비로그인 상태일 때 로그인 페이지로 자동 전환
       if (isNotLoggedIn && !isLoggedIn && data.userId && data.userPw) {
         if (path === "/" || path === "/index.php" || path.endsWith("/index.php") || document.body.classList.contains('notloggedin')) {
           if (!document.body.dataset.loginRedirecting) {
@@ -189,9 +212,9 @@ const attemptLogin = () => {
         }
       }
 
-      // 6. 로그인 성공 시 시도 플래그 초기화
+      // 7. 로그인 완료 시 실패 플래그 정리
       if (isLoggedIn) {
-        sessionStorage.removeItem('plato_login_attempted');
+        sessionStorage.removeItem('plato_login_failed');
       }
     }
   });
