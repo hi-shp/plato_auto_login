@@ -903,6 +903,10 @@ const attemptLogin = () => {
         document.querySelectorAll(closeSelectors.join(', ')).forEach(c => {
           // 배너나 a 링크 내부의 닫기 버튼은 클릭하지 않음 (새 탭/창 열림 방지)
           if (c.closest('a, .banner, [target="_blank"]')) return;
+          // 세션 만료/재로그인 모달의 버튼은 절대 닫기 처리하지 않음 (재로그인 로직이 처리하도록 보존)
+          const parentModal = c.closest('.modal, [role="dialog"], [role="alertdialog"], [data-region="modal-container"]');
+          if (parentModal && /활동이\s*없어\s*로그아웃|세션\s*만료|다시\s*로그인/i.test(parentModal.innerText)) return;
+
           if (!c.dataset.autoClosed) {
             c.dataset.autoClosed = "1";
             c.click();
@@ -932,20 +936,57 @@ const attemptLogin = () => {
         !!document.querySelector('.logout, a[href*="/login/logout.php"], .usermenu, .userpicture')
       );
 
-      // 4. 세션 만료 다이얼로그/모달 감지 및 재로그인 처리
-      const sessionModal = document.querySelector('.moodle-dialogue, .modal.show, div[role="alertdialog"], div[role="dialog"]');
-      if (sessionModal && !sessionModal.dataset.sessionHandled) {
-        const modalText = sessionModal.innerText || "";
-        if (/세션|만료|timeout|로그아웃|다시\s*로그인/i.test(modalText)) {
-          sessionModal.dataset.sessionHandled = "1";
-          const loginBtn = sessionModal.querySelector('a[href*="login"], button.btn-primary');
-          if (loginBtn) {
-            loginBtn.click();
-            return;
-          } else {
-            window.location.href = "https://plato.pusan.ac.kr/login/index.php";
-            return;
+      // 4. 세션 만료 다이얼로그/모달 감지 및 자동 재로그인 처리
+      // Moodle Coursemos 공식 세션 만료 모달 구조:
+      // <div class="modal moodle-has-zindex show" data-region="modal-container" role="dialog" ...>
+      //   <div class="modal-body" data-region="body">일정 시간 동안 활동이 없어 로그아웃되었습니다. 다시 로그인해 주세요.</div>
+      //   <div class="modal-footer" data-region="footer">
+      //     <button type="button" class="btn btn-primary" data-action="save">다시 로그인</button>
+      //   </div>
+      // </div>
+      if (data.userId && data.userPw) {
+        // A. 화면에 떠 있는 모든 활성 모달 검사
+        const openModals = document.querySelectorAll('.modal.show, div[data-region="modal-container"], .moodle-dialogue, div[role="dialog"], div[role="alertdialog"]');
+        for (const modal of openModals) {
+          const modalText = (modal.innerText || "").trim();
+          if (/활동이\s*없어\s*로그아웃|세션\s*만료|다시\s*로그인해\s*주세요|로그아웃되었습니다/i.test(modalText)) {
+            if (!modal.dataset.sessionReLoginTriggered) {
+              modal.dataset.sessionReLoginTriggered = "1";
+
+              // "다시 로그인" 버튼 우선 검색 및 클릭
+              const reloginBtn = modal.querySelector('button[data-action="save"], button.btn-primary, a[href*="login"]') ||
+                                 Array.from(modal.querySelectorAll('button, a')).find(el => /다시\s*로그인|재로그인/i.test(el.innerText));
+
+              if (reloginBtn) {
+                reloginBtn.click();
+              }
+
+              // 버튼 클릭 이벤트 후 브라우저가 이동하지 않을 경우 대비: 현재 URL을 wantsurl로 보존하여 로그인 페이지로 안전 이동
+              const currentUrl = window.location.href;
+              setTimeout(() => {
+                if (!window.location.pathname.includes('/login/')) {
+                  window.location.href = `https://plato.pusan.ac.kr/login/index.php?wantsurl=${encodeURIComponent(currentUrl)}`;
+                }
+              }, 500);
+              return;
+            }
           }
+        }
+
+        // B. 모달 래퍼와 관계없이 화면 내의 "다시 로그인" data-action="save" 버튼 직접 감지
+        const directSaveBtn = Array.from(document.querySelectorAll('button[data-action="save"], button.btn-primary')).find(b => 
+          /다시\s*로그인/i.test(b.innerText) && !b.dataset.sessionClicked
+        );
+        if (directSaveBtn) {
+          directSaveBtn.dataset.sessionClicked = "1";
+          directSaveBtn.click();
+          const currentUrl = window.location.href;
+          setTimeout(() => {
+            if (!window.location.pathname.includes('/login/')) {
+              window.location.href = `https://plato.pusan.ac.kr/login/index.php?wantsurl=${encodeURIComponent(currentUrl)}`;
+            }
+          }, 500);
+          return;
         }
       }
 
@@ -1068,14 +1109,14 @@ const observer = new MutationObserver(() => {
 });
 observer.observe(document.body, { childList: true, subtree: true });
 
-// 세션 만료 감시를 위한 주기적 체크 (30초마다)
+// 세션 만료 모달 및 로그인 상태 실시간 감시 (2초마다 신속 감지)
 const checkInterval = setInterval(() => {
   if (!chrome.runtime?.id) {
     clearInterval(checkInterval);
     return;
   }
   attemptLogin();
-}, 30000);
+}, 2000);
 
 // 교과과정 페이지 진입 시 지연 없이 캘린더 즉시 초기화
 if (window.location.hostname === "plato.pusan.ac.kr" &&
