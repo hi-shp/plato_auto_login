@@ -264,9 +264,9 @@
 }
 
 .plato-large-day-cell.today {
-  background: #f0f9ff;
-  border-color: #0284c7;
-  box-shadow: 0 0 0 1px #0284c7, 0 2px 5px rgba(2, 132, 199, 0.1);
+  background: #ffffff;
+  border-color: #0f172a;
+  box-shadow: 0 0 0 1.5px #0f172a, 0 3px 8px rgba(15, 23, 42, 0.08);
 }
 
 .plato-large-day-cell.selected {
@@ -303,19 +303,21 @@
   background: #f1f5f9;
 }
 
+/* 오늘(Today) 날짜 뱃지: 토요일/일요일 등 요일 색상과 겹쳐 숫자가 안 보이는 문제를 해결하기 위해 선명한 블랙 원형 + 순백 텍스트 */
 .plato-large-day-cell.today .plato-day-num {
-  background: #0284c7;
-  color: #ffffff;
+  background: #0f172a !important;
+  color: #ffffff !important;
   font-weight: 900;
-  box-shadow: 0 2px 5px rgba(2, 132, 199, 0.4);
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.35);
 }
 
-.plato-large-day-cell.weekend-sun .plato-day-num {
+/* 주말 색상 지정: :not(.today)를 적용하여 오늘인 경우 요일 글자색이 원형 배경 안의 흰색 숫자를 덮어쓰지 않도록 보장 */
+.plato-large-day-cell.weekend-sun:not(.today) .plato-day-num {
   color: #ef4444;
   font-weight: 900;
 }
 
-.plato-large-day-cell.weekend-sat .plato-day-num {
+.plato-large-day-cell.weekend-sat:not(.today) .plato-day-num {
   color: #2563eb;
   font-weight: 900;
 }

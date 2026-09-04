@@ -790,9 +790,10 @@ const PlatoCalendar = {
         chipsHtml = `<div class="plato-day-events-container"></div>`;
       }
 
+      const dayTooltip = d.isToday ? `오늘 (${d.day}일)` : `${d.day}일`;
       cell.innerHTML = `
         <div class="plato-day-top-row">
-          <span class="plato-day-num">${d.day}</span>
+          <span class="plato-day-num" title="${dayTooltip}">${d.day}</span>
           ${countBadgeHtml}
         </div>
         ${chipsHtml}
