@@ -1,0 +1,13 @@
+# 배포용 바이너리 압축 파일
+*.zip
+
+# OS 생성 임시 파일
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+.DS_Store
+
+# 테스트 및 임시 스크립트
+check_*.js
+temp_*.html
+temp_*.js
