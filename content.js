@@ -153,9 +153,9 @@ const attemptLogin = () => {
 
       // 5. 로그인 페이지(https://plato.pusan.ac.kr/login/index.php)인 경우: 자동 로그인 수행
       if (path.includes("/login/index.php") || path.includes("/login/")) {
-        // 이미 실제 에러 메시지가 표시된 경우 (비밀번호 불일치 등으로 인한 무한 루프 방지)
-        const errAlert = document.querySelector('.alert-danger, .loginerrors');
-        if (errAlert && errAlert.innerText.trim().length > 0 && sessionStorage.getItem('plato_login_failed')) {
+        // 실제 비밀번호 불일치 오류 메시지 감지 시 무한 루프 방지
+        const errText = (document.querySelector('.alert, .loginerrors')?.innerText || "").trim();
+        if (/잘못된|불일치|일치하지|아이디 또는 비밀번호|invalid/i.test(errText)) {
           return;
         }
 
@@ -165,58 +165,44 @@ const attemptLogin = () => {
                           document.querySelector('form.tab-content-container') ||
                           document.querySelector('form[action*="login"]');
 
-        if (loginForm && !loginForm.dataset.submitting) {
+        if (loginForm && !loginForm.dataset.autoLoggingIn) {
           const u = loginForm.querySelector('#input-username') || loginForm.querySelector('input[name="username"]');
           const p = loginForm.querySelector('#input-password') || loginForm.querySelector('input[name="password"]');
           const b = loginForm.querySelector('.btn-login') ||
                     loginForm.querySelector('button[name="loginbutton"]') ||
                     loginForm.querySelector('button[type="submit"]');
 
-          if (u && p && data.userId && data.userPw) {
-            loginForm.dataset.submitting = "1";
+          if (u && p && b && data.userId && data.userPw) {
+            loginForm.dataset.autoLoggingIn = "1";
 
-            // 값 주입 및 이벤트 트리거
+            // 값 주입 및 Bouncer 유효성 검사기 통과용 이벤트 발생
             u.value = data.userId;
             u.dispatchEvent(new Event('input', { bubbles: true }));
             u.dispatchEvent(new Event('change', { bubbles: true }));
+            u.dispatchEvent(new Event('blur', { bubbles: true }));
 
             p.value = data.userPw;
             p.dispatchEvent(new Event('input', { bubbles: true }));
             p.dispatchEvent(new Event('change', { bubbles: true }));
+            p.dispatchEvent(new Event('blur', { bubbles: true }));
 
-            // 로그인 스피너 표시
-            const spinner = loginForm.querySelector('.spinner-border-logining');
-            if (spinner) spinner.classList.remove('d-none');
-
-            // 1차: 로그인 버튼 클릭 시도
-            if (b) b.click();
-
-            // 2차: 150ms 후에도 페이지 전환이 시작되지 않으면 네이티브 폼 submit 직접 실행
+            // 단 1회 클릭으로 자연스러운 폼 제출 진행 (2차 중복 제출 절대 금지)
             setTimeout(() => {
-              try {
-                HTMLFormElement.prototype.submit.call(loginForm);
-              } catch (e) {
-                loginForm.submit();
+              if (!b.disabled) {
+                b.click();
               }
-            }, 150);
+            }, 80);
             return;
           }
         }
       }
 
-      // 6. 메인 페이지나 일반 페이지에서 비로그인 상태일 때 로그인 페이지로 자동 전환
+      // 6. 메인 페이지나 일반 페이지에서 비로그인 상태일 때 로그인 페이지로 즉시 자동 전환
       if (!isLoggedIn && isNotLoggedIn && data.userId && data.userPw) {
         if (!path.includes("/login/index.php") && !path.includes("/login/")) {
-          // 메인 화면 등에 로그인 링크 버튼이 있으면 사용자가 누르는 것과 동일하게 클릭!
-          if (loginBtnOnPage && !loginBtnOnPage.dataset.autoClicked) {
-            loginBtnOnPage.dataset.autoClicked = "1";
-            loginBtnOnPage.click();
-            return;
-          }
-          // 버튼이 없거나 응답이 없을 경우 직접 location 이동
           if (!document.body.dataset.loginRedirecting) {
             document.body.dataset.loginRedirecting = "1";
-            const loginUrl = (path === "/" || path === "/index.php")
+            const loginUrl = (path === "/" || path === "/index.php" || path === "")
               ? "https://plato.pusan.ac.kr/login/index.php"
               : `https://plato.pusan.ac.kr/login/index.php?wantsurl=${encodeURIComponent(href)}`;
             window.location.href = loginUrl;
