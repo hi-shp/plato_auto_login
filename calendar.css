@@ -1,0 +1,568 @@
+/* ==========================================================================
+   PLATO SMART CALENDAR & DASHBOARD WIDGET STYLES
+   Designed with Premium Glassmorphism, Modern Typography & Fluid Micro-interactions
+   ========================================================================== */
+
+#plato-calendar-widget {
+  all: initial;
+  display: block;
+  font-family: -apple-system, BlinkMacSystemFont, "Pretendard", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  margin: 18px 0 28px 0;
+  background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+  border-radius: 20px;
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.06), 0 8px 10px -6px rgba(15, 23, 42, 0.04);
+  padding: 24px;
+  box-sizing: border-box;
+  color: #1e293b;
+  position: relative;
+  overflow: hidden;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+#plato-calendar-widget * {
+  box-sizing: border-box;
+}
+
+/* Background Decorative Glow */
+#plato-calendar-widget::before {
+  content: "";
+  position: absolute;
+  top: -80px;
+  right: -80px;
+  width: 240px;
+  height: 240px;
+  background: radial-gradient(circle, rgba(14, 116, 144, 0.1) 0%, rgba(2, 132, 199, 0) 70%);
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Header Section */
+.plato-cal-header {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid #edf2f7;
+}
+
+.plato-cal-title-area {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.plato-cal-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: #0369a1;
+  background: #e0f2fe;
+  padding: 3px 9px;
+  border-radius: 9999px;
+  width: fit-content;
+}
+
+.plato-cal-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 800;
+  color: #0f172a;
+  letter-spacing: -0.4px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.plato-cal-stats {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  flex-wrap: wrap;
+}
+
+.plato-stat-chip {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.plato-stat-total {
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.plato-stat-done {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.plato-stat-pending {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+/* Header Action Controls */
+.plato-cal-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.plato-filter-btn {
+  background: #f8fafc;
+  border: 1px solid #cbd5e1;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 8px 14px;
+  border-radius: 10px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s ease;
+}
+
+.plato-filter-btn:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+  border-color: #94a3b8;
+}
+
+.plato-filter-btn.active {
+  background: #0284c7;
+  color: #ffffff;
+  border-color: #0284c7;
+  box-shadow: 0 4px 10px rgba(2, 132, 199, 0.25);
+}
+
+.plato-refresh-btn {
+  background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
+  color: #ffffff;
+  border: none;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 8px 16px;
+  border-radius: 10px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  box-shadow: 0 4px 12px rgba(2, 132, 199, 0.25);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.plato-refresh-btn:hover:not(:disabled) {
+  background: linear-gradient(135deg, #0369a1 0%, #075985 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(2, 132, 199, 0.35);
+}
+
+.plato-refresh-btn:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.plato-refresh-btn:disabled {
+  background: #cbd5e1;
+  color: #64748b;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.plato-refresh-icon {
+  display: inline-block;
+  transition: transform 0.6s ease;
+}
+
+.plato-refresh-btn.loading .plato-refresh-icon {
+  animation: platoSpin 1s linear infinite;
+}
+
+@keyframes platoSpin {
+  100% { transform: rotate(360deg); }
+}
+
+/* Main Content Layout: Two-Column (Calendar + Task Cards) */
+.plato-cal-body {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: 340px 1fr;
+  gap: 24px;
+  margin-top: 20px;
+}
+
+@media (max-width: 900px) {
+  .plato-cal-body {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Left Column: Mini Calendar Grid */
+.plato-cal-grid-card {
+  background: #ffffff;
+  border-radius: 16px;
+  border: 1px solid #e2e8f0;
+  padding: 16px;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.03);
+}
+
+.plato-cal-grid-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  padding: 0 4px;
+}
+
+.plato-cal-month-label {
+  font-size: 15px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.plato-cal-today-btn {
+  font-size: 11px;
+  font-weight: 600;
+  color: #0284c7;
+  background: #f0f9ff;
+  border: 1px solid #bae6fd;
+  border-radius: 6px;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+
+.plato-cal-weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  text-align: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: #94a3b8;
+  margin-bottom: 8px;
+}
+
+.plato-cal-weekdays span:first-child {
+  color: #ef4444; /* 일요일 */
+}
+
+.plato-cal-weekdays span:last-child {
+  color: #3b82f6; /* 토요일 */
+}
+
+.plato-cal-days-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+}
+
+.plato-cal-day-cell {
+  aspect-ratio: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #334155;
+  cursor: pointer;
+  position: relative;
+  transition: all 0.15s ease;
+  user-select: none;
+  border: 1px solid transparent;
+}
+
+.plato-cal-day-cell:hover {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+}
+
+.plato-cal-day-cell.empty {
+  cursor: default;
+  background: transparent;
+}
+
+.plato-cal-day-cell.today {
+  background: #e0f2fe;
+  color: #0284c7;
+  font-weight: 800;
+  border-color: #7dd3fc;
+}
+
+.plato-cal-day-cell.selected {
+  background: #0284c7 !important;
+  color: #ffffff !important;
+  border-color: #0284c7;
+  box-shadow: 0 4px 10px rgba(2, 132, 199, 0.3);
+}
+
+.plato-cal-day-cell.selected .plato-cal-dot {
+  background-color: #ffffff !important;
+}
+
+.plato-cal-day-cell.has-event {
+  font-weight: 700;
+}
+
+/* Event Dot indicators inside day cells */
+.plato-cal-dots {
+  display: flex;
+  gap: 2px;
+  margin-top: 2px;
+  height: 4px;
+}
+
+.plato-cal-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+}
+
+.plato-cal-dot.done {
+  background-color: #22c55e;
+}
+
+.plato-cal-dot.pending {
+  background-color: #ef4444;
+}
+
+/* Right Column: Upcoming Task List */
+.plato-cal-tasks-area {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.plato-tasks-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 2px;
+}
+
+.plato-tasks-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #0f172a;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.plato-tasks-count {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.plato-tasks-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 440px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+/* Custom Scrollbar for Tasks */
+.plato-tasks-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.plato-tasks-list::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 4px;
+}
+
+.plato-tasks-list::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+.plato-tasks-list::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Individual Task Card */
+.plato-task-card {
+  background: #ffffff;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  text-decoration: none;
+  color: inherit;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.02);
+}
+
+.plato-task-card:hover {
+  border-color: #0284c7;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 16px -4px rgba(2, 132, 199, 0.1), 0 2px 4px -2px rgba(2, 132, 199, 0.06);
+  background: #fafafa;
+}
+
+.plato-task-left {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  min-width: 0;
+  flex: 1;
+}
+
+.plato-task-icon-box {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.plato-task-icon-box.assign {
+  background: #eff6ff;
+  color: #2563eb;
+}
+
+.plato-task-icon-box.vod {
+  background: #fdf2f8;
+  color: #db2777;
+}
+
+.plato-task-icon-box.quiz {
+  background: #fefce8;
+  color: #ca8a04;
+}
+
+.plato-task-details {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.plato-task-course {
+  font-size: 11px;
+  font-weight: 700;
+  color: #0284c7;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.plato-task-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.plato-task-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #64748b;
+  margin-top: 2px;
+}
+
+.plato-task-date {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.plato-task-dday {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 6px;
+}
+
+.plato-task-dday.urgent {
+  background: #fee2e2;
+  color: #ef4444;
+}
+
+.plato-task-dday.soon {
+  background: #ffedd5;
+  color: #ea580c;
+}
+
+.plato-task-dday.normal {
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.plato-task-dday.passed {
+  background: #f1f5f9;
+  color: #94a3b8;
+}
+
+/* Right Status Badge in Task Card */
+.plato-task-status-badge {
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 6px 12px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.plato-task-status-badge.done {
+  background: #dcfce7;
+  color: #16a34a;
+  border: 1px solid #bbf7d0;
+}
+
+.plato-task-status-badge.pending {
+  background: #fee2e2;
+  color: #dc2626;
+  border: 1px solid #fecaca;
+}
+
+/* Empty State */
+.plato-tasks-empty {
+  background: #ffffff;
+  border-radius: 12px;
+  border: 1px dashed #cbd5e1;
+  padding: 40px 20px;
+  text-align: center;
+  color: #64748b;
+  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.plato-empty-icon {
+  font-size: 32px;
+}
