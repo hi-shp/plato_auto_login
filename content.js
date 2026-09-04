@@ -131,7 +131,20 @@ const PlatoCalendar = {
                    document.querySelector('#region-main .allcourse-list')?.parentElement ||
                    document.querySelector('#region-main') ||
                    document.querySelector('#page-content');
-    if (!target) return;
+    if (!target) {
+      if (!this._mountRetries) this._mountRetries = 0;
+      if (this._mountRetries < 30) {
+        this._mountRetries++;
+        setTimeout(() => {
+          if (!document.querySelector('#plato-calendar-widget')) {
+            this.mountWidgetSkeleton();
+            this.loadCachedData();
+          }
+        }, 100);
+      }
+      return;
+    }
+    this._mountRetries = 0;
 
     const now = new Date();
     const defaultYear = now.getFullYear();
@@ -471,7 +484,6 @@ const PlatoCalendar = {
     // 4. 캘린더 날짜별 이벤트 파싱
     const rawEvents = [];
     const days = [];
-    const dayCells = calDoc.querySelectorAll('td.day');
 
     dayCells.forEach(td => {
       const dayNum = td.querySelector('.day-number')?.innerText?.trim() || td.getAttribute('data-day');
@@ -823,7 +835,7 @@ const attemptLogin = () => {
 
     chrome.storage.local.get([
       "hjsId", "hjsPw", "hjsToggle", "hjsPopupClose",
-      "userId", "userPw", "popupToggle", "platoPopupClose",
+      "userId", "userPw", "popupToggle", "platoPopupClose", "platoCalendarToggle",
       "bbitsId", "bbitsPw", "bbitsToggle", "bbitsPopupClose"
     ], (data) => {
       if (!chrome.runtime?.id || chrome.runtime.lastError) return;
@@ -976,12 +988,13 @@ const attemptLogin = () => {
       }
 
       // 3. 로그인 여부 판단
-      const loginBtnOnPage = document.querySelector('a[href*="/login/index.php"]');
-      const isNotLoggedIn = document.body.classList.contains('notloggedin') || !!loginBtnOnPage;
-      const isLoggedIn = !isNotLoggedIn && (
-        document.body.classList.contains('loggedin') ||
-        !!document.querySelector('.logout, a[href*="/login/logout.php"], .usermenu, .userpicture')
-      );
+      const hasUserIndicator = document.body.classList.contains('loggedin') ||
+                               !!document.querySelector('.logout, a[href*="/login/logout.php"], .usermenu, .userpicture, .userbutton');
+      const hasNotLoggedInClass = document.body.classList.contains('notloggedin');
+      const loginBtnOnPage = document.querySelector('.usermenu a[href*="/login/index.php"], header a[href*="/login/index.php"], .login-btn, .btn-login');
+
+      const isLoggedIn = hasUserIndicator && !hasNotLoggedInClass;
+      const isNotLoggedIn = hasNotLoggedInClass || (!hasUserIndicator && !!loginBtnOnPage);
 
       // 4. 세션 만료 다이얼로그/모달 감지 및 자동 재로그인 처리
       // Moodle Coursemos 공식 세션 만료 모달 구조:
