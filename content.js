@@ -1,13 +1,16 @@
 const attemptLogin = () => {
-  const host = window.location.hostname;
-  const href = window.location.href;
-  const path = window.location.pathname;
+  if (!chrome.runtime?.id) return;
+  try {
+    const host = window.location.hostname;
+    const href = window.location.href;
+    const path = window.location.pathname;
 
-  chrome.storage.local.get([
-    "hjsId", "hjsPw", "hjsToggle", "hjsPopupClose",
-    "userId", "userPw", "popupToggle", "platoPopupClose",
-    "bbitsId", "bbitsPw", "bbitsToggle", "bbitsPopupClose"
-  ], (data) => {
+    chrome.storage.local.get([
+      "hjsId", "hjsPw", "hjsToggle", "hjsPopupClose",
+      "userId", "userPw", "popupToggle", "platoPopupClose",
+      "bbitsId", "bbitsPw", "bbitsToggle", "bbitsPopupClose"
+    ], (data) => {
+      if (!chrome.runtime?.id || chrome.runtime.lastError) return;
     
     if (host.includes("onestop.pusan.ac.kr") || host.includes("login.pusan.ac.kr")) {
       if (data.hjsPopupClose) {
@@ -218,6 +221,10 @@ const attemptLogin = () => {
       }
     }
   });
+  } catch (err) {
+    // 확장 프로그램 새로고침 등으로 컨텍스트가 만료된 경우 안전 종료
+    return;
+  }
 };
 
 const fixVp = () => {
@@ -228,12 +235,24 @@ const fixVp = () => {
 fixVp();
 attemptLogin();
 let t;
-new MutationObserver(() => {
+const observer = new MutationObserver(() => {
   clearTimeout(t);
-  t = setTimeout(() => { attemptLogin(); fixVp(); }, 300);
-}).observe(document.body, { childList: true, subtree: true });
+  t = setTimeout(() => {
+    if (!chrome.runtime?.id) {
+      observer.disconnect();
+      return;
+    }
+    attemptLogin();
+    fixVp();
+  }, 300);
+});
+observer.observe(document.body, { childList: true, subtree: true });
 
 // 세션 만료 감시를 위한 주기적 체크 (30초마다)
-setInterval(() => {
+const checkInterval = setInterval(() => {
+  if (!chrome.runtime?.id) {
+    clearInterval(checkInterval);
+    return;
+  }
   attemptLogin();
 }, 30000);
