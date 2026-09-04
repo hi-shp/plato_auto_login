@@ -5,7 +5,6 @@ const PlatoCalendar = {
   cooldownSeconds: 60,
   timerId: null,
   selectedDay: null,
-  showOnlyPending: false,
   cachedData: null,
 
   WEEKDAYS_KO: ['일', '월', '화', '수', '목', '금', '토'],
@@ -156,16 +155,23 @@ const PlatoCalendar = {
       <div class="plato-cal-header">
         <div class="plato-cal-header-left">
           <span class="plato-cal-brand-title">플라토 캘린더</span>
+          <a href="https://github.com/hi-shp/plato_auto_login" target="_blank" rel="noopener noreferrer" class="plato-github-link" title="GitHub 저장소 바로가기">
+            <svg class="plato-github-icon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+              <path fill="currentColor" fill-rule="evenodd" clip-rule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"></path>
+            </svg>
+          </a>
         </div>
         <div class="plato-cal-center">
           <span class="plato-cal-year" id="plato-cal-year-text">${defaultYear}년</span>
           <h2 class="plato-cal-month" id="plato-cal-month-text">${defaultMonth}월</h2>
         </div>
         <div class="plato-cal-controls">
-          <button type="button" class="plato-filter-btn" id="plato-filter-toggle">
-            <span id="plato-filter-text">미완료만</span>
-          </button>
-          <button type="button" class="plato-refresh-btn" id="plato-refresh-btn">
+          <button type="button" class="plato-refresh-btn" id="plato-refresh-btn" title="일정 새로고침">
+            <svg class="plato-btn-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 5px;">
+              <polyline points="23 4 23 10 17 10"></polyline>
+              <polyline points="1 20 1 14 7 14"></polyline>
+              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+            </svg>
             <span id="plato-refresh-text">새로고침</span>
           </button>
         </div>
@@ -200,20 +206,6 @@ const PlatoCalendar = {
     // 이벤트 바인딩
     document.querySelector('#plato-refresh-btn')?.addEventListener('click', () => {
       this.handleManualRefresh();
-    });
-
-    document.querySelector('#plato-filter-toggle')?.addEventListener('click', () => {
-      this.showOnlyPending = !this.showOnlyPending;
-      const btn = document.querySelector('#plato-filter-toggle');
-      const txt = document.querySelector('#plato-filter-text');
-      if (this.showOnlyPending) {
-        btn?.classList.add('active');
-        if (txt) txt.innerText = '전체 일정';
-      } else {
-        btn?.classList.remove('active');
-        if (txt) txt.innerText = '미완료만';
-      }
-      this.render();
     });
 
     document.querySelector('#plato-detail-close-btn')?.addEventListener('click', () => {
@@ -787,21 +779,21 @@ const PlatoCalendar = {
 
     if (this.selectedDay !== null) {
       items = items.filter(a => a.dueDay === this.selectedDay);
-      if (titleText) titleText.innerText = `${this.selectedDay}일 일정 (${items.length})`;
+      const curYear = this.cachedData.curYear;
+      const curMonth = this.cachedData.curMonth;
+      const d = new Date(curYear, curMonth - 1, this.selectedDay);
+      const dayName = this.WEEKDAYS_KO[d.getDay()] || '';
+      if (titleText) titleText.innerText = `${curMonth}월 ${this.selectedDay}일 (${dayName}) 마감 일정 (${items.length})`;
       if (closeBtn) closeBtn.style.display = 'inline-block';
     } else {
-      if (titleText) titleText.innerText = `전체 일정 (${items.length})`;
+      if (titleText) titleText.innerText = `전체 마감 일정 (${items.length})`;
       if (closeBtn) closeBtn.style.display = 'none';
-    }
-
-    if (this.showOnlyPending) {
-      items = items.filter(a => a.statusType === 'pending');
     }
 
     if (items.length === 0) {
       grid.innerHTML = `
         <div class="plato-tasks-empty">
-          <span>${this.selectedDay !== null ? `${this.selectedDay}일에` : '선택한 조건에'} 일정이 없습니다.</span>
+          <span>${this.selectedDay !== null ? `${this.selectedDay}일에 예정된 마감 일정이 없습니다.` : '등록된 마감 일정이 없습니다.'}</span>
         </div>
       `;
       return;

@@ -38,6 +38,7 @@
   display: flex;
   align-items: center;
   justify-content: flex-start;
+  gap: 6px;
 }
 
 .plato-cal-brand-title {
@@ -51,6 +52,30 @@
   letter-spacing: -0.3px;
   display: inline-flex;
   align-items: center;
+}
+
+.plato-github-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #64748b;
+  padding: 5px;
+  border-radius: 8px;
+  text-decoration: none;
+  border: 1px solid transparent;
+  transition: all 0.2s ease;
+  line-height: 1;
+}
+
+.plato-github-link:hover {
+  color: #0f172a;
+  background: #f1f5f9;
+  border-color: #e2e8f0;
+  transform: translateY(-1px);
+}
+
+.plato-github-icon {
+  display: block;
 }
 
 .plato-cal-center {
@@ -78,46 +103,26 @@
   line-height: 1.1;
 }
 
-/* Header Controls */
+/* Header Controls (새로고침 버튼 오른쪽 배치) */
 .plato-cal-controls {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 8px;
-}
-
-.plato-filter-btn {
-  background: #ffffff;
-  border: 1px solid #cbd5e1;
-  color: #475569;
-  font-size: 12px;
-  font-weight: 600;
-  padding: 6px 12px;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.plato-filter-btn:hover {
-  background: #f8fafc;
-  color: #0f172a;
-  border-color: #94a3b8;
-}
-
-.plato-filter-btn.active {
-  background: #0f172a;
-  color: #ffffff;
-  border-color: #0f172a;
 }
 
 .plato-refresh-btn {
   background: #0284c7;
   color: #ffffff;
   border: 1px solid #0284c7;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   padding: 6px 14px;
   border-radius: 8px;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
   transition: all 0.15s ease;
 }
 
@@ -133,6 +138,10 @@
   cursor: not-allowed;
 }
 
+.plato-btn-icon {
+  display: block;
+}
+
 /* ==========================================================================
    FIXED-WIDTH FULL CALENDAR GRID
    ========================================================================== */
@@ -145,16 +154,16 @@
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
   text-align: center;
-  font-size: 12px;
-  font-weight: 700;
+  font-size: 13px;
+  font-weight: 800;
   color: #64748b;
-  margin-bottom: 6px;
-  padding-bottom: 6px;
+  margin-bottom: 8px;
+  padding-bottom: 8px;
   border-bottom: 1px solid #f1f5f9;
 }
 
 .plato-cal-weekdays span:first-child {
-  color: #dc2626; /* 일 */
+  color: #ef4444; /* 일 */
 }
 
 .plato-cal-weekdays span:last-child {
@@ -171,8 +180,8 @@
 
 /* Day Cell: strictly fixed width, no expanding */
 .plato-large-day-cell {
-  height: 104px;
-  background: #f8fafc;
+  height: 106px;
+  background: #ffffff;
   border: 1px solid #e2e8f0;
   border-radius: 10px;
   padding: 6px 8px;
@@ -182,13 +191,15 @@
   position: relative;
   min-width: 0;
   overflow: hidden;
-  transition: border-color 0.15s ease, background 0.15s ease;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
+  transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
   user-select: none;
 }
 
-.plato-large-day-cell:hover {
+.plato-large-day-cell:hover:not(.empty) {
   background: #ffffff;
   border-color: #94a3b8;
+  box-shadow: 0 3px 8px rgba(15, 23, 42, 0.05);
 }
 
 /* 안된 것(미완료) 있는 날: 상단에 선명한 빨간 액센트 바 */
@@ -205,11 +216,13 @@
   cursor: default;
   background: transparent;
   border-color: transparent;
+  box-shadow: none;
 }
 
 .plato-large-day-cell.today {
   background: #f0f9ff;
   border-color: #0284c7;
+  box-shadow: 0 0 0 1px #0284c7, 0 2px 5px rgba(2, 132, 199, 0.1);
 }
 
 .plato-large-day-cell.selected {
@@ -222,34 +235,45 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 5px;
+  margin-bottom: 6px;
   min-width: 0;
 }
 
 .plato-day-num {
-  font-size: 13px;
-  font-weight: 700;
-  color: #334155;
-  width: 22px;
-  height: 22px;
+  font-size: 16px;
+  font-weight: 800;
+  color: #0f172a;
+  width: 28px;
+  height: 28px;
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: 50%;
   flex-shrink: 0;
+  line-height: 1;
+  letter-spacing: -0.5px;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.plato-large-day-cell:not(.today):not(.selected):hover .plato-day-num {
+  background: #f1f5f9;
 }
 
 .plato-large-day-cell.today .plato-day-num {
   background: #0284c7;
   color: #ffffff;
+  font-weight: 900;
+  box-shadow: 0 2px 5px rgba(2, 132, 199, 0.4);
 }
 
 .plato-large-day-cell.weekend-sun .plato-day-num {
-  color: #dc2626;
+  color: #ef4444;
+  font-weight: 900;
 }
 
 .plato-large-day-cell.weekend-sat .plato-day-num {
   color: #2563eb;
+  font-weight: 900;
 }
 
 /* 직관적이고 큰 일자 뱃지 (안된것: 빨강, 완료: 초록, 지난것: 회색) */
