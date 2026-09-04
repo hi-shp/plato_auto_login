@@ -152,8 +152,9 @@ const PlatoCalendar = {
     const widget = document.createElement('div');
     widget.id = 'plato-calendar-widget';
     widget.innerHTML = `
-      <div class="plato-cal-header">
-        <div class="plato-cal-header-left">
+      <!-- 1. 맨 위 가로로 긴 접기/펼치기 토글 바 -->
+      <div class="plato-cal-toggle-bar" id="plato-cal-toggle-bar" title="플라토 캘린더 접기/펼치기">
+        <div class="plato-toggle-bar-left">
           <span class="plato-cal-brand-title">플라토 캘린더</span>
           <a href="https://github.com/hi-shp/plato_auto_login" target="_blank" rel="noopener noreferrer" class="plato-github-link" title="GitHub 저장소 바로가기">
             <svg class="plato-github-icon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
@@ -161,11 +162,13 @@ const PlatoCalendar = {
             </svg>
           </a>
         </div>
-        <div class="plato-cal-center">
-          <span class="plato-cal-year" id="plato-cal-year-text">${defaultYear}년</span>
-          <h2 class="plato-cal-month" id="plato-cal-month-text">${defaultMonth}월</h2>
+        <div class="plato-toggle-bar-center">
+          <span class="plato-toggle-bar-label" id="plato-toggle-bar-label">달력 접기</span>
+          <svg class="plato-toggle-bar-icon" id="plato-toggle-bar-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="18 15 12 9 6 15"></polyline>
+          </svg>
         </div>
-        <div class="plato-cal-controls">
+        <div class="plato-toggle-bar-right">
           <button type="button" class="plato-refresh-btn" id="plato-refresh-btn" title="일정 새로고침">
             <svg class="plato-btn-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 5px;">
               <polyline points="23 4 23 10 17 10"></polyline>
@@ -177,7 +180,13 @@ const PlatoCalendar = {
         </div>
       </div>
 
+      <!-- 2. 접히는 전체 영역 (월별 헤더, 그리드, 상세 패널) -->
       <div class="plato-cal-collapsible-body" id="plato-cal-collapsible-body">
+        <div class="plato-cal-month-header">
+          <span class="plato-cal-year" id="plato-cal-year-text">${defaultYear}년</span>
+          <h2 class="plato-cal-month" id="plato-cal-month-text">${defaultMonth}월</h2>
+        </div>
+
         <!-- 고정 7열 대형 월간 캘린더 그리드 -->
         <div class="plato-cal-grid-card">
           <div class="plato-cal-weekdays">
@@ -201,23 +210,22 @@ const PlatoCalendar = {
           </div>
         </div>
       </div>
-
-      <!-- 가로로 긴 하단 접기/펼치기 토글 바 -->
-      <button type="button" class="plato-cal-toggle-bar" id="plato-cal-toggle-bar" title="달력 접기/펼치기">
-        <span class="plato-toggle-bar-label" id="plato-toggle-bar-label">달력 접기</span>
-        <svg class="plato-toggle-bar-icon" id="plato-toggle-bar-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-          <polyline points="18 15 12 9 6 15"></polyline>
-        </svg>
-      </button>
     `;
 
     target.insertBefore(widget, target.firstChild);
 
-    // 이벤트 바인딩
-    document.querySelector('#plato-refresh-btn')?.addEventListener('click', () => {
+    // 이벤트 바인딩: 새로고침 버튼 (버블링 방지)
+    document.querySelector('#plato-refresh-btn')?.addEventListener('click', (e) => {
+      e.stopPropagation();
       this.handleManualRefresh();
     });
 
+    // 깃허브 링크 클릭 (버블링 방지)
+    document.querySelector('.plato-github-link')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+    });
+
+    // 상세 패널 닫기
     document.querySelector('#plato-detail-close-btn')?.addEventListener('click', () => {
       this.selectedDay = null;
       document.querySelectorAll('.plato-large-day-cell.selected').forEach(c => c.classList.remove('selected'));
@@ -231,8 +239,11 @@ const PlatoCalendar = {
       }
     });
 
-    // 접기/펼치기 토글 바 클릭 이벤트
-    document.querySelector('#plato-cal-toggle-bar')?.addEventListener('click', () => {
+    // 맨 위 가로 바 클릭 시 전체 접기/펼치기 토글
+    document.querySelector('#plato-cal-toggle-bar')?.addEventListener('click', (e) => {
+      if (e.target.closest('#plato-refresh-btn') || e.target.closest('.plato-github-link')) {
+        return;
+      }
       const widgetEl = document.querySelector('#plato-calendar-widget');
       const isCurrentlyCollapsed = widgetEl?.classList.contains('collapsed');
       this.setCollapsed(!isCurrentlyCollapsed);

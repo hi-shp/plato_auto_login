@@ -23,29 +23,39 @@
   box-sizing: border-box;
 }
 
-/* Header Section: 실제 달력처럼 중앙에 연도/월이 시원하게 배치되는 레이아웃 */
-.plato-cal-header {
+/* ==========================================================================
+   TOP TOGGLE BAR (가로로 긴 맨 위 접기/펼치기 토글 바)
+   ========================================================================== */
+.plato-cal-toggle-bar {
+  width: 100%;
   display: grid;
-  grid-template-columns: 1fr auto 1fr;
+  grid-template-columns: auto 1fr auto;
   align-items: center;
-  padding-bottom: 20px;
-  margin-bottom: 6px;
-  border-bottom: 1px solid #f1f5f9;
-  gap: 16px;
+  padding: 8px 14px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.2s ease;
 }
 
-.plato-cal-header-left {
+.plato-cal-toggle-bar:hover {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+}
+
+.plato-toggle-bar-left {
   display: flex;
   align-items: center;
-  justify-content: flex-start;
   gap: 6px;
 }
 
 .plato-cal-brand-title {
-  font-size: 17px;
+  font-size: 16px;
   font-weight: 800;
   color: #0f172a;
-  letter-spacing: -0.5px;
+  letter-spacing: -0.4px;
   display: inline-flex;
   align-items: center;
   user-select: none;
@@ -70,46 +80,39 @@
   display: block;
 }
 
-.plato-cal-center {
+.plato-toggle-bar-center {
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  text-align: center;
-}
-
-.plato-cal-year {
-  font-size: 14px;
-  font-weight: 600;
+  gap: 6px;
   color: #64748b;
-  letter-spacing: 0.5px;
-  line-height: 1.2;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: -0.2px;
 }
 
-.plato-cal-month {
-  margin: 2px 0 0 0;
-  font-size: 34px;
-  font-weight: 800;
+.plato-cal-toggle-bar:hover .plato-toggle-bar-center {
   color: #0f172a;
-  letter-spacing: -1.2px;
-  line-height: 1.1;
 }
 
-/* Header Controls (새로고침 버튼 오른쪽 배치) */
-.plato-cal-controls {
+.plato-toggle-bar-icon {
+  display: block;
+  transition: transform 0.25s ease;
+}
+
+.plato-toggle-bar-right {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 8px;
 }
 
 .plato-refresh-btn {
   background: #0284c7;
   color: #ffffff;
   border: 1px solid #0284c7;
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 600;
-  padding: 6px 14px;
+  padding: 6px 13px;
   border-radius: 8px;
   cursor: pointer;
   display: inline-flex;
@@ -132,6 +135,43 @@
 
 .plato-btn-icon {
   display: block;
+}
+
+/* ==========================================================================
+   COLLAPSIBLE BODY (월별 헤더, 캘린더 그리드, 상세 패널)
+   ========================================================================== */
+.plato-cal-collapsible-body {
+  margin-top: 14px;
+  transition: all 0.25s ease;
+}
+
+/* 실제 달력처럼 중앙에 연도/월이 시원하게 배치되는 월별 헤더 */
+.plato-cal-month-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 6px 0 16px 0;
+  margin-bottom: 6px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.plato-cal-year {
+  font-size: 14px;
+  font-weight: 600;
+  color: #64748b;
+  letter-spacing: 0.5px;
+  line-height: 1.2;
+}
+
+.plato-cal-month {
+  margin: 2px 0 0 0;
+  font-size: 34px;
+  font-weight: 800;
+  color: #0f172a;
+  letter-spacing: -1.2px;
+  line-height: 1.1;
 }
 
 /* ==========================================================================
@@ -545,52 +585,16 @@
 }
 
 /* ==========================================================================
-   COLLAPSIBLE / EXPANDABLE TOGGLE BAR (가로로 긴 하단 접기/펴기 바)
+   접힌 상태 (COLLAPSED STATE) - 본문 전체 접힘
    ========================================================================== */
-.plato-cal-toggle-bar {
-  width: 100%;
-  margin-top: 14px;
-  padding: 8px 16px;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  cursor: pointer;
-  color: #475569;
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: -0.2px;
-  transition: all 0.2s ease;
-  user-select: none;
+#plato-calendar-widget.collapsed {
+  padding: 8px 10px;
+  margin: 12px 0 20px 0;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.03);
 }
 
-.plato-cal-toggle-bar:hover {
-  background: #f1f5f9;
-  border-color: #cbd5e1;
-  color: #0f172a;
-}
-
-.plato-toggle-bar-icon {
-  display: block;
-  transition: transform 0.25s ease;
-}
-
-/* 접힌 상태 (Collapsed) */
 #plato-calendar-widget.collapsed .plato-cal-collapsible-body {
   display: none;
-}
-
-#plato-calendar-widget.collapsed .plato-cal-header {
-  padding-bottom: 10px;
-  margin-bottom: 0;
-  border-bottom: none;
-}
-
-#plato-calendar-widget.collapsed .plato-cal-toggle-bar {
-  margin-top: 6px;
 }
 
 #plato-calendar-widget.collapsed .plato-toggle-bar-icon {
@@ -598,21 +602,14 @@
 }
 
 @media (max-width: 768px) {
-  .plato-cal-header {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 12px;
+  .plato-cal-toggle-bar {
+    grid-template-columns: 1fr auto;
+    row-gap: 8px;
   }
-  .plato-cal-header-left {
-    order: 1;
-  }
-  .plato-cal-center {
-    order: 2;
-  }
-  .plato-cal-controls {
+  .plato-toggle-bar-center {
     order: 3;
-    width: 100%;
-    justify-content: center;
+    grid-column: 1 / -1;
+    border-top: 1px solid #f1f5f9;
+    padding-top: 6px;
   }
 }
