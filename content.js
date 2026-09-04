@@ -68,10 +68,39 @@ const attemptLogin = () => {
 
     if (host.includes("bbits.ac.kr")) {
       if (data.bbitsPopupClose) {
-        document.querySelectorAll('[data-action="just_close"]').forEach(b => b.click());
+        document.querySelectorAll('[data-action="just_close"], .modal .close, .modal .btn-close').forEach(b => b.click());
       }
       if (!data.bbitsToggle) return;
-      if (document.querySelector('[data-action*="logout"]')) return;
+      if (document.querySelector('[data-action*="logout"], .logout, a[href*="logout"]')) return;
+
+      // 1. LMS 페이지 (https://lms.bbits.ac.kr/login.php 등) 로그인 처리
+      const lmsUnivSelect = document.querySelector('select#univid, select[name="univid"]');
+      const lmsU = document.querySelector('input#username, form.form-login input[name="username"]');
+      const lmsP = document.querySelector('input#password, form.form-login input[name="password"]');
+      const lmsBtn = document.querySelector('button.main_login_btn, form.form-login button[type="submit"]');
+
+      if (lmsU && lmsP && lmsBtn && !lmsU.dataset.done) {
+        lmsU.dataset.done = "1";
+        if (lmsUnivSelect) {
+          const opt = Array.from(lmsUnivSelect.options).find(o => o.text.includes("부산대"));
+          lmsUnivSelect.value = opt ? opt.value : "C1";
+          lmsUnivSelect.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+        lmsU.value = data.bbitsId || "";
+        lmsU.dispatchEvent(new Event('input', { bubbles: true }));
+        lmsU.dispatchEvent(new Event('change', { bubbles: true }));
+
+        lmsP.value = data.bbitsPw || "";
+        lmsP.dispatchEvent(new Event('input', { bubbles: true }));
+        lmsP.dispatchEvent(new Event('change', { bubbles: true }));
+
+        setTimeout(() => {
+          lmsBtn.click();
+        }, 50);
+        return;
+      }
+
+      // 2. 통합 포털 (https://www.bbits.ac.kr) 모달 로그인 처리
       const loginModalBtn = document.querySelector('[data-action="coursemos_widgets_unifiedloginbar_templets_default_login2_login"]');
       const loginLayer = document.querySelector('.popup_layer.login');
       if (loginModalBtn && (!loginLayer || loginLayer.style.display === 'none')) {

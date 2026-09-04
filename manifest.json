@@ -9,7 +9,8 @@
     "https://plato.pusan.ac.kr/*",
     "https://login.pusan.ac.kr/*",
     "https://onestop.pusan.ac.kr/*",
-    "https://www.bbits.ac.kr/*"
+    "https://www.bbits.ac.kr/*",
+    "https://lms.bbits.ac.kr/*"
   ],
   "action": {
     "default_popup": "popup.html",
@@ -22,7 +23,8 @@
         "https://plato.pusan.ac.kr/*",
         "https://login.pusan.ac.kr/*",
         "https://onestop.pusan.ac.kr/*",
-        "https://www.bbits.ac.kr/*"
+        "https://www.bbits.ac.kr/*",
+        "https://lms.bbits.ac.kr/*"
       ],
       "js": ["content.js"],
       "run_at": "document_end",
