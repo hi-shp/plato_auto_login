@@ -92,16 +92,19 @@ const attemptLogin = () => {
     }
 
     if (host === "plato.pusan.ac.kr") {
-      // 1. 팝업 자동 닫기 (Bootstrap 4/5 및 신규 Coursemos 테마 호환)
+      // 1. 실제 공지 팝업/모달 자동 닫기 (배너나 링크 내부 버튼은 절대 클릭하지 않음)
       if (data.platoPopupClose) {
         const closeSelectors = [
           '.modal-dialog .btn-close',
           '.modal-dialog .close',
+          '.modal .btn-close',
+          '.modal .close',
           '.pop-close',
-          '[data-bs-dismiss="modal"]',
-          '.btn-close[data-id]'
+          '[data-bs-dismiss="modal"]'
         ];
         document.querySelectorAll(closeSelectors.join(', ')).forEach(c => {
+          // 배너나 a 링크 내부의 닫기 버튼은 클릭하지 않음 (새 탭/창 열림 방지)
+          if (c.closest('a, .banner, [target="_blank"]')) return;
           if (!c.dataset.autoClosed) {
             c.dataset.autoClosed = "1";
             c.click();
@@ -137,12 +140,12 @@ const attemptLogin = () => {
         const modalText = sessionModal.innerText || "";
         if (/세션|만료|timeout|로그아웃|다시\s*로그인/i.test(modalText)) {
           sessionModal.dataset.sessionHandled = "1";
-          const loginBtn = sessionModal.querySelector('a[href*="login"], button.btn-primary, button');
+          const loginBtn = sessionModal.querySelector('a[href*="login"], button.btn-primary');
           if (loginBtn) {
             loginBtn.click();
             return;
           } else {
-            window.location.replace("https://plato.pusan.ac.kr/login/index.php");
+            window.location.href = "https://plato.pusan.ac.kr/login/index.php";
             return;
           }
         }
@@ -202,14 +205,21 @@ const attemptLogin = () => {
       }
 
       // 6. 메인 페이지나 일반 페이지에서 비로그인 상태일 때 로그인 페이지로 자동 전환
-      if (isNotLoggedIn && !isLoggedIn && data.userId && data.userPw) {
-        if (path === "/" || path === "/index.php" || path.endsWith("/index.php") || document.body.classList.contains('notloggedin')) {
+      if (!isLoggedIn && isNotLoggedIn && data.userId && data.userPw) {
+        if (!path.includes("/login/index.php") && !path.includes("/login/")) {
+          // 메인 화면 등에 로그인 링크 버튼이 있으면 사용자가 누르는 것과 동일하게 클릭!
+          if (loginBtnOnPage && !loginBtnOnPage.dataset.autoClicked) {
+            loginBtnOnPage.dataset.autoClicked = "1";
+            loginBtnOnPage.click();
+            return;
+          }
+          // 버튼이 없거나 응답이 없을 경우 직접 location 이동
           if (!document.body.dataset.loginRedirecting) {
             document.body.dataset.loginRedirecting = "1";
             const loginUrl = (path === "/" || path === "/index.php")
               ? "https://plato.pusan.ac.kr/login/index.php"
               : `https://plato.pusan.ac.kr/login/index.php?wantsurl=${encodeURIComponent(href)}`;
-            window.location.replace(loginUrl);
+            window.location.href = loginUrl;
             return;
           }
         }
