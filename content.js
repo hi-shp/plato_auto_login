@@ -217,12 +217,21 @@ const PlatoCalendar = {
       const lastFetch = res.plato_calendar_last_fetch || 0;
       const elapsed = now - lastFetch;
 
-      if (res.plato_calendar_data && res.plato_calendar_data.activities) {
+      const hasValidData = res.plato_calendar_data &&
+                           res.plato_calendar_data.activities &&
+                           res.plato_calendar_data.activities.length > 0;
+
+      if (hasValidData) {
         this.cachedData = res.plato_calendar_data;
         this.render();
       }
 
-      if (elapsed < this.cooldownSeconds * 1000) {
+      // 재로그인 직후이거나, 유효한 데이터가 없거나, 쿨다운(60초)이 경과한 경우 즉시 새로고침
+      const needForceRefresh = sessionStorage.getItem('plato_need_calendar_refresh') === '1' || !hasValidData;
+      if (needForceRefresh) {
+        sessionStorage.removeItem('plato_need_calendar_refresh');
+        this.fetchAndRefreshData();
+      } else if (elapsed < this.cooldownSeconds * 1000) {
         this.startCooldownTimer(Math.ceil((this.cooldownSeconds * 1000 - elapsed) / 1000));
       } else {
         this.fetchAndRefreshData();
@@ -274,14 +283,26 @@ const PlatoCalendar = {
 
     try {
       const data = await this.scrapeAllData();
-      this.cachedData = data;
-      const now = Date.now();
-      chrome.storage.local.set({
-        plato_calendar_data: data,
-        plato_calendar_last_fetch: now
-      });
-      this.render();
-      this.startCooldownTimer(this.cooldownSeconds);
+      // 유효한 데이터(날짜나 과제가 정상 존재하는 캘린더)인 경우에만 캐시 갱신
+      if (data && data.activities && data.activities.length > 0) {
+        this.cachedData = data;
+        const now = Date.now();
+        chrome.storage.local.set({
+          plato_calendar_data: data,
+          plato_calendar_last_fetch: now
+        });
+        this.render();
+        this.startCooldownTimer(this.cooldownSeconds);
+      } else if (this.cachedData) {
+        // 스크랩 데이터가 비어있고 이전 정상 캐시가 있다면 이전 캐시 유지
+        console.warn('Plato Calendar: Scraped activities empty, keeping existing cache');
+        this.render();
+        if (btn) btn.disabled = false;
+        if (txt) txt.innerText = '새로고침';
+      } else {
+        if (btn) btn.disabled = false;
+        if (txt) txt.innerText = '새로고침';
+      }
     } catch (e) {
       console.error('Failed to fetch plato calendar data:', e);
       if (btn) btn.disabled = false;
@@ -293,7 +314,20 @@ const PlatoCalendar = {
     // 1. Moodle 월별 캘린더 View Fetch
     const calResp = await fetch('https://plato.pusan.ac.kr/calendar/view.php?view=month', { credentials: 'same-origin' });
     const calText = await calResp.text();
+
+    // 세션 만료 상태 감지 시 기존 정상 캐시 보존을 위해 즉시 중단
+    if (calResp.redirected && calResp.url.includes('/login/')) {
+      throw new Error('Session expired: redirected to login');
+    }
+    if ((calText.includes('id="form-login-sso"') || calText.includes('name="username"')) && calText.includes('name="password"')) {
+      throw new Error('Session expired: login form detected');
+    }
+
     const calDoc = new DOMParser().parseFromString(calText, 'text/html');
+    const dayCells = calDoc.querySelectorAll('td.day');
+    if (dayCells.length === 0) {
+      throw new Error('Calendar days not found in response');
+    }
 
     const monthTitle = calDoc.querySelector('h2.current, h2')?.innerText?.trim() || '이번 달 일정';
     let curYear = new Date().getFullYear();
@@ -305,8 +339,21 @@ const PlatoCalendar = {
     const mMatch = monthTitle.match(/([0-9]{1,2})\s*월/);
     if (mMatch) curMonth = parseInt(mMatch[1], 10);
 
-    // 2. 교과과정 페이지 DOM에서 수강 강좌 ID 및 이름 추출 (교수님 성/이름 중복 해결 적용)
-    const courseLinks = document.querySelectorAll('a[href*="/course/view.php?id="]');
+    // 2. 교과과정 페이지 DOM에서 수강 강좌 ID 및 이름 추출 (부족할 경우 정규 교과과정 페이지 fetch 보완)
+    let courseLinks = document.querySelectorAll('a[href*="/course/view.php?id="]');
+    if (courseLinks.length === 0) {
+      try {
+        const cResp = await fetch('https://plato.pusan.ac.kr/local/ubion/allcourse/regular/index.php', { credentials: 'same-origin' });
+        if (cResp.ok) {
+          const cText = await cResp.text();
+          const cDoc = new DOMParser().parseFromString(cText, 'text/html');
+          courseLinks = cDoc.querySelectorAll('a[href*="/course/view.php?id="]');
+        }
+      } catch (e) {
+        console.warn('Failed to fetch fallback course list:', e);
+      }
+    }
+
     const coursesMap = new Map();
     courseLinks.forEach(a => {
       const m = a.href.match(/id=([0-9]+)/);
@@ -958,6 +1005,7 @@ const attemptLogin = () => {
                                  Array.from(modal.querySelectorAll('button, a')).find(el => /다시\s*로그인|재로그인/i.test(el.innerText));
 
               if (reloginBtn) {
+                sessionStorage.setItem('plato_need_calendar_refresh', '1');
                 reloginBtn.click();
               }
 
@@ -965,6 +1013,7 @@ const attemptLogin = () => {
               const currentUrl = window.location.href;
               setTimeout(() => {
                 if (!window.location.pathname.includes('/login/')) {
+                  sessionStorage.setItem('plato_need_calendar_refresh', '1');
                   window.location.href = `https://plato.pusan.ac.kr/login/index.php?wantsurl=${encodeURIComponent(currentUrl)}`;
                 }
               }, 500);
@@ -979,10 +1028,12 @@ const attemptLogin = () => {
         );
         if (directSaveBtn) {
           directSaveBtn.dataset.sessionClicked = "1";
+          sessionStorage.setItem('plato_need_calendar_refresh', '1');
           directSaveBtn.click();
           const currentUrl = window.location.href;
           setTimeout(() => {
             if (!window.location.pathname.includes('/login/')) {
+              sessionStorage.setItem('plato_need_calendar_refresh', '1');
               window.location.href = `https://plato.pusan.ac.kr/login/index.php?wantsurl=${encodeURIComponent(currentUrl)}`;
             }
           }, 500);
@@ -1013,6 +1064,7 @@ const attemptLogin = () => {
 
           if (u && p && b && data.userId && data.userPw) {
             loginForm.dataset.autoLoggingIn = "1";
+            sessionStorage.setItem('plato_need_calendar_refresh', '1');
 
             // 값 주입 및 Bouncer 유효성 검사기 통과용 이벤트 발생
             u.value = data.userId;
