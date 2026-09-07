@@ -403,12 +403,24 @@
 /* ==========================================================================
    DETAIL PANEL (Expanded on day click)
    ========================================================================== */
+@keyframes platoDetailFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .plato-cal-detail-panel {
   margin-top: 18px;
   background: #ffffff;
   border-radius: 12px;
   border: 1px solid #e2e8f0;
   padding: 16px 20px;
+  animation: platoDetailFadeIn 0.2s ease-out;
 }
 
 .plato-detail-header {

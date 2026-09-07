@@ -191,17 +191,13 @@ const PlatoCalendar = {
           </div>
         </div>
 
-        <!-- 클릭 시 나타나는 특정 날짜 상세 활동 패널 -->
-        <div class="plato-cal-detail-panel" id="plato-calendar-detail-panel">
+        <!-- 클릭 시 나타나는 특정 날짜 상세 활동 패널 (기본 숨김: 날짜 클릭 시 노출) -->
+        <div class="plato-cal-detail-panel" id="plato-calendar-detail-panel" style="display: none;">
           <div class="plato-detail-header">
             <span class="plato-detail-title" id="plato-detail-title-text">일정 상세</span>
-            <button type="button" class="plato-detail-close-btn" id="plato-detail-close-btn">전체 보기</button>
+            <button type="button" class="plato-detail-close-btn" id="plato-detail-close-btn">닫기</button>
           </div>
-          <div class="plato-detail-cards-grid" id="plato-detail-cards-grid">
-            <div class="plato-tasks-empty">
-              <span>데이터를 불러오는 중입니다...</span>
-            </div>
-          </div>
+          <div class="plato-detail-cards-grid" id="plato-detail-cards-grid"></div>
         </div>
       </div>
     `;
@@ -812,30 +808,42 @@ const PlatoCalendar = {
   },
 
   renderDetailPanel() {
+    const panel = document.querySelector('#plato-calendar-detail-panel');
     const grid = document.querySelector('#plato-detail-cards-grid');
     const titleText = document.querySelector('#plato-detail-title-text');
     const closeBtn = document.querySelector('#plato-detail-close-btn');
-    if (!grid || !this.cachedData) return;
+    if (!panel || !grid) return;
 
-    let items = this.cachedData.activities || [];
+    // 디폴트 상태: 아무 날짜도 클릭되지 않은 경우 상세 패널 숨김 (전체보기 제거)
+    if (this.selectedDay === null) {
+      panel.style.display = 'none';
+      grid.innerHTML = '';
+      return;
+    }
 
-    if (this.selectedDay !== null) {
-      items = items.filter(a => a.dueDay === this.selectedDay);
-      const curYear = this.cachedData.curYear;
-      const curMonth = this.cachedData.curMonth;
-      const d = new Date(curYear, curMonth - 1, this.selectedDay);
-      const dayName = this.WEEKDAYS_KO[d.getDay()] || '';
-      if (titleText) titleText.innerText = `${curMonth}월 ${this.selectedDay}일(${dayName}) 마감 일정 (${items.length})`;
-      if (closeBtn) closeBtn.style.display = 'inline-block';
-    } else {
-      if (titleText) titleText.innerText = `전체 마감 일정 (${items.length})`;
-      if (closeBtn) closeBtn.style.display = 'none';
+    // 특정 날짜를 클릭했을 때만 패널 노출
+    panel.style.display = 'block';
+
+    if (!this.cachedData) return;
+
+    const items = (this.cachedData.activities || []).filter(a => a.dueDay === this.selectedDay);
+    const curYear = this.cachedData.curYear;
+    const curMonth = this.cachedData.curMonth;
+    const d = new Date(curYear, curMonth - 1, this.selectedDay);
+    const dayName = this.WEEKDAYS_KO[d.getDay()] || '';
+
+    if (titleText) {
+      titleText.innerText = `${curMonth}월 ${this.selectedDay}일(${dayName}) 마감 일정 (${items.length})`;
+    }
+    if (closeBtn) {
+      closeBtn.innerText = '닫기';
+      closeBtn.style.display = 'inline-block';
     }
 
     if (items.length === 0) {
       grid.innerHTML = `
         <div class="plato-tasks-empty">
-          <span>${this.selectedDay !== null ? `${this.selectedDay}일에 예정된 마감 일정이 없습니다.` : '등록된 마감 일정이 없습니다.'}</span>
+          <span>${this.selectedDay}일에 예정된 마감 일정이 없습니다.</span>
         </div>
       `;
       return;
