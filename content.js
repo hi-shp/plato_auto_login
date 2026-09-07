@@ -2203,6 +2203,37 @@ const BbitsCalendar = {
   }
 };
 
+// 플라토 홈 유지 여부 판별 (교과과정에서 홈 버튼을 직접 눌러 이동해 온 1회성 진입만 홈 유지)
+// 홈에서 새로고침(F5)을 하거나 다른 경로로 진입 시에는 무조건 교과과정 페이지로 이동
+let allowPlatoHomeThisPage = false;
+if (window.location.hostname.includes("plato.pusan.ac.kr")) {
+  const isHomePath = window.location.pathname === "/" || 
+                     window.location.pathname === "/index.php" || 
+                     window.location.pathname === "";
+  if (isHomePath) {
+    const isReload = (() => {
+      try {
+        const navEntries = window.performance?.getEntriesByType?.('navigation');
+        if (navEntries && navEntries.length > 0) {
+          return navEntries[0].type === 'reload';
+        }
+        if (window.performance?.navigation) {
+          return window.performance.navigation.type === 1;
+        }
+      } catch (e) {}
+      return false;
+    })();
+
+    const fromCourseClick = sessionStorage.getItem('plato_home_clicked_from_course') === '1';
+    sessionStorage.removeItem('plato_home_clicked_from_course');
+
+    // 새로고침이 아니고, 교과과정에서 홈 버튼을 누르고 이동해 온 최초 1회 뷰만 홈 유지
+    if (fromCourseClick && !isReload) {
+      allowPlatoHomeThisPage = true;
+    }
+  }
+}
+
 const attemptLogin = () => {
   if (!chrome.runtime?.id) return;
   try {
@@ -2475,7 +2506,7 @@ const attemptLogin = () => {
           u.dataset.done = "1";
           if (isPlato) {
             sessionStorage.setItem('plato_need_calendar_refresh', '1');
-            sessionStorage.removeItem('plato_user_went_home');
+            sessionStorage.removeItem('plato_home_clicked_from_course');
           }
 
           // 값 주입 및 이벤트 발생
@@ -2504,7 +2535,7 @@ const attemptLogin = () => {
         if (!isLoginPage) {
           if (!document.body.dataset.loginRedirecting) {
             document.body.dataset.loginRedirecting = "1";
-            if (isPlato) sessionStorage.removeItem('plato_user_went_home');
+            if (isPlato) sessionStorage.removeItem('plato_home_clicked_from_course');
             let loginUrl;
             if (isDevPlato) {
               loginUrl = `https://${host}/login.php?wantsurl=${encodeURIComponent(href)}`;
@@ -2532,24 +2563,20 @@ const attemptLogin = () => {
 
         if (isPlato) {
           // 플라토 메인 홈(/ 또는 /index.php)인 경우 처리
-          // 사용자가 홈 버튼(<a href="/" class="btn-channel nav-link" role="menuitem"> 등)이나 로고를 직접 눌러 이동한 경우,
-          // 또는 내부 교과과정 페이지 등에서 홈으로 이동한 경우 교과과정 재리다이렉트 방지
+          // 교과과정 페이지에서 홈 버튼을 직접 누른 1회성 진입만 홈 유지 허용, 그 외(새로고침, 직링크 등)는 교과과정으로 자동 이동
           const isHome = path === "/" || path === "/index.php" || path === "";
-          const userWentHome = sessionStorage.getItem('plato_user_went_home') === 'true';
-          const cameFromInternal = !!(document.referrer && 
-                                      document.referrer.includes('plato.pusan.ac.kr') && 
-                                      !document.referrer.includes('/login'));
-
-          if (isHome && (userWentHome || cameFromInternal)) {
-            sessionStorage.setItem('plato_user_went_home', 'true');
-          } else if (isHome && data.platoCalendarToggle !== false) {
-            const now = Date.now();
-            const lastRedirect = parseInt(sessionStorage.getItem('plato_last_course_redirect') || '0', 10);
-            // 무한 루프 방지: 3초 이내 중복 리다이렉트 방지
-            if (now - lastRedirect > 3000) {
-              sessionStorage.setItem('plato_last_course_redirect', now.toString());
-              window.location.replace("https://plato.pusan.ac.kr/local/ubion/allcourse/regular/index.php");
+          if (isHome) {
+            if (allowPlatoHomeThisPage) {
               return;
+            }
+            if (data.platoCalendarToggle !== false) {
+              const now = Date.now();
+              const lastRedirect = parseInt(sessionStorage.getItem('plato_last_course_redirect') || '0', 10);
+              if (now - lastRedirect > 1500) {
+                sessionStorage.setItem('plato_last_course_redirect', now.toString());
+                window.location.replace("https://plato.pusan.ac.kr/local/ubion/allcourse/regular/index.php");
+                return;
+              }
             }
           }
 
@@ -2597,7 +2624,7 @@ const checkInterval = setInterval(() => {
   attemptLogin();
 }, 2000);
 
-// 플라토 홈 버튼 및 네비게이션 클릭 감지: 사용자가 직접 홈으로 이동할 때 교과과정 재리다이렉트 방지
+// 플라토 홈 버튼 클릭 감지: 교과과정 페이지에서 홈 버튼을 직접 클릭한 경우에만 1회성으로 홈 유지 허용
 if (window.location.hostname.includes("plato.pusan.ac.kr")) {
   document.addEventListener('click', (e) => {
     const link = e.target.closest('a');
@@ -2614,10 +2641,10 @@ if (window.location.hostname.includes("plato.pusan.ac.kr")) {
                        link.getAttribute('role') === 'menuitem' ||
                        link.classList.contains('navbar-brand');
 
-    if (isHomeHref && (isHomeText || isHomeMenu || href === '/')) {
-      sessionStorage.setItem('plato_user_went_home', 'true');
-    } else if (href.includes('/local/ubion/allcourse/')) {
-      sessionStorage.removeItem('plato_user_went_home');
+    const isCoursePage = window.location.pathname.includes('/local/ubion/allcourse/');
+
+    if (isCoursePage && isHomeHref && (isHomeText || isHomeMenu || href === '/')) {
+      sessionStorage.setItem('plato_home_clicked_from_course', '1');
     }
   }, true);
 }
