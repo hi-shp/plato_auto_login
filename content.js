@@ -466,6 +466,24 @@ const PlatoCalendar = {
     }, 1000);
   },
 
+  cleanHtmlForParsing(html) {
+    if (!html) return '';
+    return html
+      .replace(/<script\b[\s\S]*?<\/script>/gi, '')
+      .replace(/<style\b[\s\S]*?<\/style>/gi, '')
+      .replace(/<svg\b[\s\S]*?<\/svg>/gi, '');
+  },
+
+  async fetchWithTimeout(url, options = {}, timeoutMs = 8000) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetch(url, { ...options, credentials: 'same-origin', signal: controller.signal });
+    } finally {
+      clearTimeout(timer);
+    }
+  },
+
   async fetchAndRefreshData() {
     const btn = document.querySelector('#plato-refresh-btn');
     if (btn) btn.disabled = true;
@@ -476,8 +494,14 @@ const PlatoCalendar = {
     this.setLoading(true, '새로고침 중...');
 
     try {
-      await this.fetchCourseStatuses();
-      const data = await this.fetchMonthCalendar(this.viewYear, this.viewMonth, true);
+      // 🚀 병렬 최적화: 강좌별 활동 현황 조회와 월간 캘린더 조회를 동시에 실행(Promise.all)
+      // 🚀 중복 호출 제거: 기존 2회 연속 실행되던 네트워크 요청을 1회로 통합하여 요청 수 50% 절감
+      const [statusMaps, calDoc] = await Promise.all([
+        this.fetchCourseStatuses(),
+        this.fetchCalendarDoc(this.viewYear, this.viewMonth)
+      ]);
+
+      const data = this.parseCalendarDoc(calDoc, this.viewYear, this.viewMonth, statusMaps);
       if (data && data.activities) {
         this.cachedData = data;
         this.monthCache[`${this.viewYear}_${this.viewMonth}`] = data;
@@ -503,19 +527,28 @@ const PlatoCalendar = {
   async fetchCourseStatuses() {
     let courseLinks = document.querySelectorAll('a[href*="/course/view.php?id="]');
     if (courseLinks.length === 0) {
-      try {
-        const cResp = await fetch('https://plato.pusan.ac.kr/local/ubion/allcourse/regular/index.php', { credentials: 'same-origin' });
-        if (cResp.ok) {
-          const cText = await cResp.text();
-          const cDoc = new DOMParser().parseFromString(cText, 'text/html');
-          courseLinks = cDoc.querySelectorAll('a[href*="/course/view.php?id="]');
+      if (this.cachedCourses && this.cachedCourses.length > 0) {
+        // 이미 저장된 강좌 목록이 있으면 재요청 없이 즉시 사용
+        courseLinks = [];
+      } else {
+        try {
+          const cResp = await this.fetchWithTimeout('https://plato.pusan.ac.kr/local/ubion/allcourse/regular/index.php');
+          if (cResp.ok) {
+            const cText = await cResp.text();
+            const cleanCText = this.cleanHtmlForParsing(cText);
+            const cDoc = new DOMParser().parseFromString(cleanCText, 'text/html');
+            courseLinks = cDoc.querySelectorAll('a[href*="/course/view.php?id="]');
+          }
+        } catch (e) {
+          console.warn('Failed to fetch fallback course list:', e);
         }
-      } catch (e) {
-        console.warn('Failed to fetch fallback course list:', e);
       }
     }
 
     const coursesMap = new Map();
+    if (this.cachedCourses && this.cachedCourses.length > 0) {
+      this.cachedCourses.forEach(c => coursesMap.set(c.id, c));
+    }
     courseLinks.forEach(a => {
       const m = a.href.match(/id=([0-9]+)/);
       if (m) {
@@ -533,13 +566,14 @@ const PlatoCalendar = {
       const info = { courseId: c.id, courseName: c.name, items: {} };
       try {
         const [actRes, assignRes] = await Promise.all([
-          fetch(`https://plato.pusan.ac.kr/report/ublogs/student/activity.php?id=${c.id}`, { credentials: 'same-origin' }),
-          fetch(`https://plato.pusan.ac.kr/mod/assign/index.php?id=${c.id}`, { credentials: 'same-origin' })
+          this.fetchWithTimeout(`https://plato.pusan.ac.kr/report/ublogs/student/activity.php?id=${c.id}`),
+          this.fetchWithTimeout(`https://plato.pusan.ac.kr/mod/assign/index.php?id=${c.id}`)
         ]);
 
         if (actRes.ok) {
           const actText = await actRes.text();
-          const actDoc = new DOMParser().parseFromString(actText, 'text/html');
+          const cleanActText = this.cleanHtmlForParsing(actText);
+          const actDoc = new DOMParser().parseFromString(cleanActText, 'text/html');
           actDoc.querySelectorAll('tr[data-modname], tr').forEach(tr => {
             const link = tr.querySelector('td.td-activity a[href*="id="]') ||
                          tr.querySelector('a[href*="/mod/vod/view.php?id="]') ||
@@ -579,7 +613,8 @@ const PlatoCalendar = {
 
         if (assignRes.ok) {
           const assignText = await assignRes.text();
-          const assignDoc = new DOMParser().parseFromString(assignText, 'text/html');
+          const cleanAssignText = this.cleanHtmlForParsing(assignText);
+          const assignDoc = new DOMParser().parseFromString(cleanAssignText, 'text/html');
           assignDoc.querySelectorAll('tr').forEach(tr => {
             const link = tr.querySelector('a[href*="/mod/assign/view.php?id="]');
             if (link) {
@@ -636,19 +671,9 @@ const PlatoCalendar = {
     return { globalStatusMap, nameStatusMap };
   },
 
-  async fetchMonthCalendar(year, month, forceStatusFetch = false) {
-    if (forceStatusFetch || !this.cachedStatusMap) {
-      await this.fetchCourseStatuses();
-    }
-    const globalStatusMap = this.cachedStatusMap || {};
-    const nameStatusMap = this.cachedNameStatusMap || {};
-
-    const curYear = year;
-    const curMonth = month;
-    const totalDays = new Date(curYear, curMonth, 0).getDate();
-
-    const timestamp = Math.floor(new Date(curYear, curMonth - 1, 1, 12, 0, 0).getTime() / 1000);
-    const calResp = await fetch(`https://plato.pusan.ac.kr/calendar/view.php?view=month&time=${timestamp}`, { credentials: 'same-origin' });
+  async fetchCalendarDoc(year, month) {
+    const timestamp = Math.floor(new Date(year, month - 1, 1, 12, 0, 0).getTime() / 1000);
+    const calResp = await this.fetchWithTimeout(`https://plato.pusan.ac.kr/calendar/view.php?view=month&time=${timestamp}`);
     const calText = await calResp.text();
 
     if (calResp.redirected && calResp.url.includes('/login/')) {
@@ -658,7 +683,28 @@ const PlatoCalendar = {
       throw new Error('Session expired: login form detected');
     }
 
-    const calDoc = new DOMParser().parseFromString(calText, 'text/html');
+    const cleanHtml = this.cleanHtmlForParsing(calText);
+    return new DOMParser().parseFromString(cleanHtml, 'text/html');
+  },
+
+  async fetchMonthCalendar(year, month, forceStatusFetch = false) {
+    let statusMaps = {
+      globalStatusMap: this.cachedStatusMap || {},
+      nameStatusMap: this.cachedNameStatusMap || {}
+    };
+
+    if (forceStatusFetch || !this.cachedStatusMap) {
+      statusMaps = await this.fetchCourseStatuses();
+    }
+
+    const calDoc = await this.fetchCalendarDoc(year, month);
+    return this.parseCalendarDoc(calDoc, year, month, statusMaps);
+  },
+
+  parseCalendarDoc(calDoc, curYear, curMonth, statusMaps) {
+    const globalStatusMap = statusMaps?.globalStatusMap || this.cachedStatusMap || {};
+    const nameStatusMap = statusMaps?.nameStatusMap || this.cachedNameStatusMap || {};
+    const totalDays = new Date(curYear, curMonth, 0).getDate();
     const dayCells = calDoc.querySelectorAll('td.day');
 
     const rawEvents = [];
