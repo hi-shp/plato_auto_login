@@ -494,8 +494,8 @@ const PlatoCalendar = {
     this.setLoading(true, '새로고침 중...');
 
     try {
-      // 🚀 병렬 최적화: 강좌별 활동 현황 조회와 월간 캘린더 조회를 동시에 실행(Promise.all)
-      // 🚀 중복 호출 제거: 기존 2회 연속 실행되던 네트워크 요청을 1회로 통합하여 요청 수 50% 절감
+      // 병렬 최적화: 강좌별 활동 현황 조회와 월간 캘린더 조회를 동시에 실행(Promise.all)
+      // 중복 호출 제거: 기존 2회 연속 실행되던 네트워크 요청을 1회로 통합하여 요청 수 50% 절감
       const [statusMaps, calDoc] = await Promise.all([
         this.fetchCourseStatuses(),
         this.fetchCalendarDoc(this.viewYear, this.viewMonth)
