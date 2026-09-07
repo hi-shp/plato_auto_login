@@ -47,7 +47,7 @@
 ![image02](./images/image02.png)
 
 ### A. 통합 자동 로그인 (Auto-Login)
-* **PLATO**: 접속 즉시 로그인 폼을 감지하여 저장된 계정 정보를 주입하고 로그인을 완료합니다.
+* **PLATO & 개발서버(dev-plato)**: `plato.pusan.ac.kr` 및 개발/테스트 서버(`dev-plato.pusan.ac.kr`, `dev-plato.ac.kr`) 접속 시 세션 만료 페이지(`/login.php?errorcode=4`)를 포함하여 저장된 동일한 계정 정보로 자동 로그인을 지원합니다.
 * **학생지원시스템**: 통합 로그인(SSO) 연동을 통해 별도의 조작 없이 세션을 연결합니다.
 * **부산공유대학(BBITS 포털 & LMS)**: 포털(`www.bbits.ac.kr`) 및 LMS(`lms.bbits.ac.kr`) 로그인 시 소속 대학('부산대학교')을 자동으로 선택하고 계정 정보를 입력하여 원스톱 로그인을 지원합니다.
 

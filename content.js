@@ -1183,7 +1183,10 @@ const attemptLogin = () => {
       }
     }
 
-    if (host === "plato.pusan.ac.kr") {
+    const isPlato = host === "plato.pusan.ac.kr";
+    const isDevPlato = host === "dev-plato.pusan.ac.kr" || host === "dev-plato.ac.kr" || host.includes("dev-plato");
+
+    if (isPlato || isDevPlato) {
       // 1. 실제 공지 팝업/모달 자동 닫기 (배너나 링크 내부 버튼은 절대 클릭하지 않음)
       if (data.platoPopupClose) {
         const closeSelectors = [
@@ -1215,7 +1218,7 @@ const attemptLogin = () => {
 
       // 2. Moodle 로그인 후 중간 "리다이랙트" 안내 화면 자동 통과
       if (document.title.includes("리다이랙트") || document.querySelector('#region-main h1')?.innerText.includes("리다이랙트")) {
-        const continueLink = document.querySelector('#region-main a[href*="plato.pusan.ac.kr"]');
+        const continueLink = document.querySelector('#region-main a[href*="plato.pusan.ac.kr"], #region-main a[href*="dev-plato"]');
         if (continueLink) {
           continueLink.click();
           return;
@@ -1224,21 +1227,14 @@ const attemptLogin = () => {
 
       // 3. 로그인 여부 판단
       const hasUserIndicator = document.body.classList.contains('loggedin') ||
-                               !!document.querySelector('.logout, a[href*="/login/logout.php"], .usermenu, .userpicture, .userbutton');
+                               !!document.querySelector('.logout, a[href*="/login/logout.php"], a[href*="logout.php"], .usermenu, .userpicture, .userbutton');
       const hasNotLoggedInClass = document.body.classList.contains('notloggedin');
-      const loginBtnOnPage = document.querySelector('.usermenu a[href*="/login/index.php"], header a[href*="/login/index.php"], .login-btn, .btn-login');
+      const loginBtnOnPage = document.querySelector('.usermenu a[href*="login"], header a[href*="login"], .login-btn, .btn-login, #loginbtn');
 
       const isLoggedIn = hasUserIndicator && !hasNotLoggedInClass;
       const isNotLoggedIn = hasNotLoggedInClass || (!hasUserIndicator && !!loginBtnOnPage);
 
       // 4. 세션 만료 다이얼로그/모달 감지 및 자동 재로그인 처리
-      // Moodle Coursemos 공식 세션 만료 모달 구조:
-      // <div class="modal moodle-has-zindex show" data-region="modal-container" role="dialog" ...>
-      //   <div class="modal-body" data-region="body">일정 시간 동안 활동이 없어 로그아웃되었습니다. 다시 로그인해 주세요.</div>
-      //   <div class="modal-footer" data-region="footer">
-      //     <button type="button" class="btn btn-primary" data-action="save">다시 로그인</button>
-      //   </div>
-      // </div>
       if (data.userId && data.userPw) {
         // A. 화면에 떠 있는 모든 활성 모달 검사
         const openModals = document.querySelectorAll('.modal.show, div[data-region="modal-container"], .moodle-dialogue, div[role="dialog"], div[role="alertdialog"]');
@@ -1253,16 +1249,19 @@ const attemptLogin = () => {
                                  Array.from(modal.querySelectorAll('button, a')).find(el => /다시\s*로그인|재로그인/i.test(el.innerText));
 
               if (reloginBtn) {
-                sessionStorage.setItem('plato_need_calendar_refresh', '1');
+                if (isPlato) sessionStorage.setItem('plato_need_calendar_refresh', '1');
                 reloginBtn.click();
               }
 
               // 버튼 클릭 이벤트 후 브라우저가 이동하지 않을 경우 대비: 현재 URL을 wantsurl로 보존하여 로그인 페이지로 안전 이동
               const currentUrl = window.location.href;
               setTimeout(() => {
-                if (!window.location.pathname.includes('/login/')) {
-                  sessionStorage.setItem('plato_need_calendar_refresh', '1');
-                  window.location.href = `https://plato.pusan.ac.kr/login/index.php?wantsurl=${encodeURIComponent(currentUrl)}`;
+                if (!window.location.pathname.includes('/login/') && !window.location.pathname.includes('login.php')) {
+                  if (isPlato) sessionStorage.setItem('plato_need_calendar_refresh', '1');
+                  const targetLoginUrl = isDevPlato
+                    ? `https://${host}/login.php?wantsurl=${encodeURIComponent(currentUrl)}`
+                    : `https://plato.pusan.ac.kr/login/index.php?wantsurl=${encodeURIComponent(currentUrl)}`;
+                  window.location.href = targetLoginUrl;
                 }
               }, 500);
               return;
@@ -1276,79 +1275,95 @@ const attemptLogin = () => {
         );
         if (directSaveBtn) {
           directSaveBtn.dataset.sessionClicked = "1";
-          sessionStorage.setItem('plato_need_calendar_refresh', '1');
+          if (isPlato) sessionStorage.setItem('plato_need_calendar_refresh', '1');
           directSaveBtn.click();
           const currentUrl = window.location.href;
           setTimeout(() => {
-            if (!window.location.pathname.includes('/login/')) {
-              sessionStorage.setItem('plato_need_calendar_refresh', '1');
-              window.location.href = `https://plato.pusan.ac.kr/login/index.php?wantsurl=${encodeURIComponent(currentUrl)}`;
+            if (!window.location.pathname.includes('/login/') && !window.location.pathname.includes('login.php')) {
+              if (isPlato) sessionStorage.setItem('plato_need_calendar_refresh', '1');
+              const targetLoginUrl = isDevPlato
+                ? `https://${host}/login.php?wantsurl=${encodeURIComponent(currentUrl)}`
+                : `https://plato.pusan.ac.kr/login/index.php?wantsurl=${encodeURIComponent(currentUrl)}`;
+              window.location.href = targetLoginUrl;
             }
           }, 500);
           return;
         }
       }
 
-      // 5. 로그인 페이지(https://plato.pusan.ac.kr/login/index.php)인 경우: 자동 로그인 수행
-      if (path.includes("/login/index.php") || path.includes("/login/")) {
-        // 실제 비밀번호 불일치 오류 메시지 감지 시 무한 루프 방지
-        const errText = (document.querySelector('.alert, .loginerrors')?.innerText || "").trim();
+      // 5. 로그인 페이지인 경우: 자동 로그인 수행
+      // 플라토 신규 UI (/login/index.php) 및 구버전/dev-plato (/login.php, /login.php?errorcode=4 등) 모두 지원
+      const isLoginPage = path.includes("/login.php") ||
+                          path.includes("/login/index.php") ||
+                          path.includes("/login/") ||
+                          href.includes("login.php");
+
+      if (isLoginPage) {
+        // 실제 비밀번호 불일치 오류 메시지 감지 시 무한 루프 방지 (errorcode=4 세션 만료 알림 등은 통과)
+        const errText = (document.querySelector('.alert, .loginerrors, #notice, .notifyproblem')?.innerText || "").trim();
         if (/잘못된|불일치|일치하지|아이디 또는 비밀번호|invalid/i.test(errText)) {
           return;
         }
 
-        // 기본 활성 탭(교내 구성원 SSO 폼 #form-login-sso) 타겟팅
+        // SSO 폼(#form-login-sso) 또는 표준 Moodle 로그인 폼(#login, form[action*="login"] 등) 검색
         const loginForm = document.querySelector('#form-login-sso') ||
+                          document.querySelector('#login') ||
                           document.querySelector('.tab-pane.active form') ||
                           document.querySelector('form.tab-content-container') ||
                           document.querySelector('form[action*="login"]');
 
-        if (loginForm && !loginForm.dataset.autoLoggingIn) {
-          const u = loginForm.querySelector('#input-username') || loginForm.querySelector('input[name="username"]');
-          const p = loginForm.querySelector('#input-password') || loginForm.querySelector('input[name="password"]');
-          const b = loginForm.querySelector('.btn-login') ||
-                    loginForm.querySelector('button[name="loginbutton"]') ||
-                    loginForm.querySelector('button[type="submit"]');
+        const u = loginForm?.querySelector('#input-username, input#username, input[name="username"], #login_id') ||
+                  document.querySelector('#input-username, input#username, input[name="username"], #login_id');
+        const p = loginForm?.querySelector('#input-password, input#password, input[name="password"], #login_pw') ||
+                  document.querySelector('#input-password, input#password, input[name="password"], #login_pw');
+        const b = loginForm?.querySelector('.btn-login, #loginbtn, button[name="loginbutton"], input[name="loginbutton"], button[type="submit"], input[type="submit"]') ||
+                  document.querySelector('.btn-login, #loginbtn, button[name="loginbutton"], input[name="loginbutton"], button[type="submit"], input[type="submit"]');
 
-          if (u && p && b && data.userId && data.userPw) {
-            loginForm.dataset.autoLoggingIn = "1";
-            sessionStorage.setItem('plato_need_calendar_refresh', '1');
+        const lockTarget = loginForm || u;
+        if (lockTarget && !lockTarget.dataset.autoLoggingIn && u && p && b && data.userId && data.userPw) {
+          lockTarget.dataset.autoLoggingIn = "1";
+          u.dataset.done = "1";
+          if (isPlato) sessionStorage.setItem('plato_need_calendar_refresh', '1');
 
-            // 값 주입 및 Bouncer 유효성 검사기 통과용 이벤트 발생
-            u.value = data.userId;
-            u.dispatchEvent(new Event('input', { bubbles: true }));
-            u.dispatchEvent(new Event('change', { bubbles: true }));
-            u.dispatchEvent(new Event('blur', { bubbles: true }));
+          // 값 주입 및 이벤트 발생
+          u.value = data.userId;
+          u.dispatchEvent(new Event('input', { bubbles: true }));
+          u.dispatchEvent(new Event('change', { bubbles: true }));
+          u.dispatchEvent(new Event('blur', { bubbles: true }));
 
-            p.value = data.userPw;
-            p.dispatchEvent(new Event('input', { bubbles: true }));
-            p.dispatchEvent(new Event('change', { bubbles: true }));
-            p.dispatchEvent(new Event('blur', { bubbles: true }));
+          p.value = data.userPw;
+          p.dispatchEvent(new Event('input', { bubbles: true }));
+          p.dispatchEvent(new Event('change', { bubbles: true }));
+          p.dispatchEvent(new Event('blur', { bubbles: true }));
 
-            // 단 1회 클릭으로 자연스러운 폼 제출 진행 (2차 중복 제출 절대 금지)
-            setTimeout(() => {
-              if (!b.disabled) {
-                b.click();
-              }
-            }, 80);
-            return;
-          }
+          // 단 1회 클릭으로 자연스러운 폼 제출 진행 (2차 중복 제출 방지)
+          setTimeout(() => {
+            if (!b.disabled) {
+              b.click();
+            }
+          }, 80);
+          return;
         }
       }
 
       // 6. 메인 페이지나 일반 페이지에서 비로그인 상태일 때 로그인 페이지로 즉시 자동 전환
       if (!isLoggedIn && isNotLoggedIn && data.userId && data.userPw) {
-        if (!path.includes("/login/index.php") && !path.includes("/login/")) {
+        if (!isLoginPage) {
           if (!document.body.dataset.loginRedirecting) {
             document.body.dataset.loginRedirecting = "1";
-            const isHome = path === "/" || path === "/index.php" || path === "";
-            let loginUrl = `https://plato.pusan.ac.kr/login/index.php?wantsurl=${encodeURIComponent(href)}`;
-            if (isHome) {
-              if (data.platoCalendarToggle !== false) {
-                const targetUrl = "https://plato.pusan.ac.kr/local/ubion/allcourse/regular/index.php";
-                loginUrl = `https://plato.pusan.ac.kr/login/index.php?wantsurl=${encodeURIComponent(targetUrl)}`;
-              } else {
-                loginUrl = "https://plato.pusan.ac.kr/login/index.php";
+            let loginUrl;
+            if (isDevPlato) {
+              loginUrl = `https://${host}/login.php?wantsurl=${encodeURIComponent(href)}`;
+            } else {
+              const isHome = path === "/" || path === "/index.php" || path === "";
+              loginUrl = `https://plato.pusan.ac.kr/login/index.php?wantsurl=${encodeURIComponent(href)}`;
+              if (isHome) {
+                if (data.platoCalendarToggle !== false) {
+                  const targetUrl = "https://plato.pusan.ac.kr/local/ubion/allcourse/regular/index.php";
+                  loginUrl = `https://plato.pusan.ac.kr/login/index.php?wantsurl=${encodeURIComponent(targetUrl)}`;
+                } else {
+                  loginUrl = "https://plato.pusan.ac.kr/login/index.php";
+                }
               }
             }
             window.location.href = loginUrl;
@@ -1357,27 +1372,29 @@ const attemptLogin = () => {
         }
       }
 
-      // 7. 로그인 완료 시: 홈 화면 진입 감지 시 교과과정 페이지로 자동 이동 및 캘린더 초기화
+      // 7. 로그인 완료 시: 플라토 정규 교과과정 페이지 이동 및 캘린더 초기화 (정규 플라토에만 적용)
       if (isLoggedIn) {
         sessionStorage.removeItem('plato_login_failed');
 
-        // 플라토 메인 홈(/ 또는 /index.php)인 경우 자동으로 교과과정 페이지로 이동
-        // 캘린더 기능이 OFF인 경우 홈→교과과정 리다이렉트도 비활성화
-        const isHome = path === "/" || path === "/index.php" || path === "";
-        if (isHome && data.platoCalendarToggle !== false) {
-          const now = Date.now();
-          const lastRedirect = parseInt(sessionStorage.getItem('plato_last_course_redirect') || '0', 10);
-          // 무한 루프 방지: 3초 이내 중복 리다이렉트 방지
-          if (now - lastRedirect > 3000) {
-            sessionStorage.setItem('plato_last_course_redirect', now.toString());
-            window.location.replace("https://plato.pusan.ac.kr/local/ubion/allcourse/regular/index.php");
-            return;
+        if (isPlato) {
+          // 플라토 메인 홈(/ 또는 /index.php)인 경우 자동으로 교과과정 페이지로 이동
+          // 캘린더 기능이 OFF인 경우 홈→교과과정 리다이렉트도 비활성화
+          const isHome = path === "/" || path === "/index.php" || path === "";
+          if (isHome && data.platoCalendarToggle !== false) {
+            const now = Date.now();
+            const lastRedirect = parseInt(sessionStorage.getItem('plato_last_course_redirect') || '0', 10);
+            // 무한 루프 방지: 3초 이내 중복 리다이렉트 방지
+            if (now - lastRedirect > 3000) {
+              sessionStorage.setItem('plato_last_course_redirect', now.toString());
+              window.location.replace("https://plato.pusan.ac.kr/local/ubion/allcourse/regular/index.php");
+              return;
+            }
           }
-        }
 
-        // 교과과정 페이지인 경우 플라토 스마트 캘린더 위젯 초기화
-        if (path.includes("/local/ubion/allcourse/regular/index.php") || path.includes("/local/ubion/allcourse/")) {
-          PlatoCalendar.init();
+          // 교과과정 페이지인 경우 플라토 스마트 캘린더 위젯 초기화
+          if (path.includes("/local/ubion/allcourse/regular/index.php") || path.includes("/local/ubion/allcourse/")) {
+            PlatoCalendar.init();
+          }
         }
       }
     }

@@ -6,6 +6,8 @@
   "permissions": ["storage"],
   "host_permissions": [
     "https://plato.pusan.ac.kr/*",
+    "https://dev-plato.pusan.ac.kr/*",
+    "https://dev-plato.ac.kr/*",
     "https://login.pusan.ac.kr/*",
     "https://onestop.pusan.ac.kr/*",
     "https://www.bbits.ac.kr/*",
@@ -20,6 +22,8 @@
     {
       "matches": [
         "https://plato.pusan.ac.kr/*",
+        "https://dev-plato.pusan.ac.kr/*",
+        "https://dev-plato.ac.kr/*",
         "https://login.pusan.ac.kr/*",
         "https://onestop.pusan.ac.kr/*",
         "https://www.bbits.ac.kr/*",
