@@ -58,7 +58,7 @@ const PlatoCalendar = {
     }
 
     // 2. 결석/X 표시 체크 (단독 X 또는 결석 X)
-    if (/\bX\b|[✕✖❌]/.test(text) && !/[O⭕]/.test(text)) {
+    if (/\bX\b|[\u2715\u2716\u274C]/.test(text) && !/[O\u2B55]/.test(text)) {
       return false;
     }
 
@@ -947,7 +947,7 @@ const PlatoCalendar = {
       if (pendingCount > 0) {
         countBadgeHtml = `<span class="plato-day-badge badge-pending">${pendingCount}</span>`;
       } else if (doneCount > 0) {
-        countBadgeHtml = `<span class="plato-day-badge badge-done">✓</span>`;
+        countBadgeHtml = `<span class="plato-day-badge badge-done"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;"><polyline points="20 6 9 17 4 12"></polyline></svg></span>`;
       } else if (passedCount > 0) {
         countBadgeHtml = `<span class="plato-day-badge badge-passed">${passedCount}</span>`;
       }
@@ -1064,6 +1064,1099 @@ const PlatoCalendar = {
   }
 };
 
+/* ==========================================================================
+   BBITS (부산공유대학) SMART CALENDAR & DASHBOARD ENGINE
+   ========================================================================== */
+const BbitsCalendar = {
+  selectedDay: null,
+  cachedData: null,
+  viewYear: new Date().getFullYear(),
+  viewMonth: new Date().getMonth() + 1,
+  monthCache: {},
+  cachedStatusMap: null,
+  cachedNameStatusMap: null,
+  cachedCourses: null,
+  navRequestId: 0,
+
+  WEEKDAYS_KO: ['일', '월', '화', '수', '목', '금', '토'],
+
+  cleanCourseName(rawName) {
+    if (!rawName) return '공유대학 강좌';
+    let clean = rawName.replace(/^[0-9]+년\s+[0-9]+학기\s+교과과정\s+학부\s*/, '');
+    clean = clean.replace(/([가-힣]{1,2})\s+\1([가-힣]+)/g, '$1$2');
+    return clean.replace(/\s+/g, ' ').trim();
+  },
+
+  getWeekdayStr(year, month, day) {
+    if (!day) return '';
+    const d = new Date(year, month - 1, day);
+    return this.WEEKDAYS_KO[d.getDay()] || '';
+  },
+
+  formatPeriodText(parsedPeriod, year, month, startDay, dueDay) {
+    if (parsedPeriod) {
+      return parsedPeriod.replace(/(\d{1,2})월\s*(\d{1,2})일/g, (match, m, d) => {
+        const mNum = parseInt(m, 10);
+        const dNum = parseInt(d, 10);
+        const w = this.getWeekdayStr(year, mNum, dNum);
+        return `${mNum}월 ${dNum}일(${w})`;
+      });
+    }
+
+    if (startDay && startDay !== dueDay) {
+      const startW = this.getWeekdayStr(year, month, startDay);
+      const dueW = this.getWeekdayStr(year, month, dueDay);
+      return `${month}월 ${startDay}일(${startW}) ~ ${month}월 ${dueDay}일(${dueW})`;
+    } else {
+      const dueW = this.getWeekdayStr(year, month, dueDay);
+      return `${month}월 ${dueDay}일(${dueW}) 마감`;
+    }
+  },
+
+  checkIsCompleted(statusText, trElement) {
+    const text = (statusText || trElement?.innerText || '').trim();
+    if (!text) return false;
+
+    // 1. 명백한 미완료/부정 키워드 우선 체크
+    if (/미완료|미제출|미학습|미응시|미수강|결석|진행중|학습전|학습\s*전|미달|부족/.test(text)) {
+      return false;
+    }
+
+    // 2. 결석/X 표시 체크
+    if (/\bX\b|[\u2715\u2716\u274C]/.test(text) && !/[O\u2B55]/.test(text)) {
+      return false;
+    }
+
+    // 3. 진도율 체크 (100% 미만이면 미완료)
+    const percentMatch = text.match(/(\d{1,3})\s*%/);
+    if (percentMatch) {
+      const pct = parseInt(percentMatch[1], 10);
+      if (pct < 100) return false;
+      if (pct >= 100) return true;
+    }
+
+    // 4. 완료/출석/제출 긍정 키워드 체크
+    if (/제출\s*완료|학습\s*완료|응시\s*완료|출석|출석인정/.test(text)) {
+      return true;
+    }
+    if (/(?:^|[^미])완료/.test(text)) {
+      return true;
+    }
+    if (/\bO\b|[O⭕]/.test(text)) {
+      return true;
+    }
+
+    // 5. DOM 클래스 체크
+    if (trElement) {
+      if (trElement.querySelector('.text-danger, .label-danger, .badge-danger, .danger')) {
+        return false;
+      }
+      if (trElement.querySelector('.video_completed, .text-success, .label-success, .badge-success, .success, [src*="completion-auto-y"], [src*="completion-manual-y"]')) {
+        return true;
+      }
+    }
+
+    return false;
+  },
+
+  init() {
+    if (window !== window.top) return;
+    if (window.location.hostname !== 'lms.bbits.ac.kr') return;
+    const path = window.location.pathname;
+    const isMain = path === '/' || path === '' || path.includes('/index.php');
+    if (!isMain) return;
+
+    // 팝업 설정(bbitsCalendarToggle) 확인 (기본값: true)
+    chrome.storage.local.get(['bbitsCalendarToggle'], (res) => {
+      if (res.bbitsCalendarToggle === false) return;
+
+      // 중복 삽입 방지
+      if (document.querySelector('#bbits-calendar-widget')) return;
+
+      this.mountWidgetSkeleton();
+      this.loadCachedData();
+    });
+
+    // 팝업에서 실시간 온오프 토글 시 동적 반영
+    if (!this._storageListenerRegistered) {
+      this._storageListenerRegistered = true;
+      chrome.storage.onChanged.addListener((changes, area) => {
+        if (area === 'local' && changes.bbitsCalendarToggle) {
+          if (changes.bbitsCalendarToggle.newValue === false) {
+            document.querySelector('#bbits-calendar-widget')?.remove();
+          } else {
+            if (!document.querySelector('#bbits-calendar-widget')) {
+              this.mountWidgetSkeleton();
+              this.loadCachedData();
+            }
+          }
+        }
+      });
+    }
+  },
+
+  mountWidgetSkeleton() {
+    const courseLists = document.querySelector('.course_lists');
+    const target = courseLists ? courseLists.parentElement :
+                   (document.querySelector('.total_course_lists') ||
+                    document.querySelector('#region-main') ||
+                    document.querySelector('#page-content'));
+
+    if (!target) {
+      if (!this._mountRetries) this._mountRetries = 0;
+      if (this._mountRetries < 30) {
+        this._mountRetries++;
+        setTimeout(() => {
+          if (!document.querySelector('#bbits-calendar-widget')) {
+            this.mountWidgetSkeleton();
+            this.loadCachedData();
+          }
+        }, 100);
+      }
+      return;
+    }
+    this._mountRetries = 0;
+
+    const now = new Date();
+    const defaultYear = now.getFullYear();
+    const defaultMonth = now.getMonth() + 1;
+
+    const widget = document.createElement('div');
+    widget.id = 'bbits-calendar-widget';
+    widget.innerHTML = `
+      <!-- 1. 맨 위 상단 헤더 바 -->
+      <div class="plato-cal-top-bar" id="bbits-cal-top-bar">
+        <div class="plato-top-bar-left">
+          <span class="plato-cal-brand-title" id="bbits-cal-brand-title" title="달력 접기/펼치기">공유대학 캘린더</span>
+          <button type="button" class="plato-cal-toggle-btn" id="bbits-cal-toggle-btn" title="달력 접기" aria-label="달력 접기/펼치기">
+            <svg class="plato-toggle-triangle" viewBox="0 0 24 24" width="12" height="12" fill="currentColor" aria-hidden="true">
+              <path d="M12 8l6 8H6l6-8z"/>
+            </svg>
+          </button>
+        </div>
+        <div class="plato-top-bar-right">
+          <button type="button" class="plato-refresh-btn" id="bbits-refresh-btn" title="일정 새로고침">
+            <svg class="plato-btn-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 5px;">
+              <polyline points="23 4 23 10 17 10"></polyline>
+              <polyline points="1 20 1 14 7 14"></polyline>
+              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+            </svg>
+            <span id="bbits-refresh-text">새로고침</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- 2. 접히는 전체 영역 -->
+      <div class="plato-cal-collapsible-body" id="bbits-cal-collapsible-body">
+        <div class="plato-cal-month-header">
+          <div class="plato-cal-month-nav-container">
+            <button type="button" class="plato-cal-month-nav-btn prev" id="bbits-cal-prev-btn" title="이전 달">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="15 18 9 12 15 6"></polyline>
+              </svg>
+            </button>
+            <div class="plato-cal-month-title-wrap">
+              <span class="plato-cal-year" id="bbits-cal-year-text">${defaultYear}년</span>
+              <h2 class="plato-cal-month" id="bbits-cal-month-text">${defaultMonth}월</h2>
+            </div>
+            <button type="button" class="plato-cal-month-nav-btn next" id="bbits-cal-next-btn" title="다음 달">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="9 18 15 12 9 6"></polyline>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- 고정 7열 대형 월간 캘린더 그리드 -->
+        <div class="plato-cal-grid-card" id="bbits-cal-grid-card">
+          <div class="plato-cal-weekdays">
+            <span>일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span>
+          </div>
+          <div class="plato-large-days-grid" id="bbits-large-days-grid"></div>
+
+          <!-- 갱신/동기화 중 상태 오버레이 -->
+          <div class="plato-cal-loading-overlay" id="bbits-cal-loading-overlay">
+            <div class="plato-loading-bar"></div>
+            <div class="plato-loading-dots" title="일정 갱신 중">
+              <span></span>
+              <span></span>
+              <span></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 클릭 시 나타나는 특정 날짜 상세 활동 패널 -->
+        <div class="plato-cal-detail-panel" id="bbits-calendar-detail-panel" style="display: none;">
+          <div class="plato-detail-header">
+            <span class="plato-detail-title" id="bbits-detail-title-text">일정 상세</span>
+            <button type="button" class="plato-detail-close-btn" id="bbits-detail-close-btn">닫기</button>
+          </div>
+          <div class="plato-detail-cards-grid" id="bbits-detail-cards-grid"></div>
+        </div>
+      </div>
+    `;
+
+    if (courseLists && courseLists.parentElement) {
+      courseLists.parentElement.insertBefore(widget, courseLists);
+    } else {
+      target.insertBefore(widget, target.firstChild);
+    }
+
+    // 이벤트 바인딩
+    document.querySelector('#bbits-refresh-btn')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.handleManualRefresh();
+    });
+
+    document.querySelector('#bbits-cal-prev-btn')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.prevMonth();
+    });
+
+    document.querySelector('#bbits-cal-next-btn')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.nextMonth();
+    });
+
+    document.querySelector('#bbits-detail-close-btn')?.addEventListener('click', () => {
+      this.selectedDay = null;
+      document.querySelectorAll('#bbits-calendar-widget .plato-large-day-cell.selected').forEach(c => c.classList.remove('selected'));
+      this.renderDetailPanel();
+    });
+
+    // 저장된 접기/펼치기 상태 복원
+    chrome.storage.local.get(['bbitsCalendarCollapsed'], (res) => {
+      if (res.bbitsCalendarCollapsed) {
+        this.setCollapsed(true);
+      }
+    });
+
+    const toggleCollapse = (e) => {
+      e.stopPropagation();
+      const widgetEl = document.querySelector('#bbits-calendar-widget');
+      const isCurrentlyCollapsed = widgetEl?.classList.contains('collapsed');
+      this.setCollapsed(!isCurrentlyCollapsed);
+    };
+
+    document.querySelector('#bbits-cal-toggle-btn')?.addEventListener('click', toggleCollapse);
+    document.querySelector('#bbits-cal-brand-title')?.addEventListener('click', toggleCollapse);
+  },
+
+  setCollapsed(collapsed) {
+    const widget = document.querySelector('#bbits-calendar-widget');
+    const toggleBtn = document.querySelector('#bbits-cal-toggle-btn');
+    if (!widget) return;
+
+    if (collapsed) {
+      widget.classList.add('collapsed');
+      if (toggleBtn) toggleBtn.setAttribute('title', '달력 펼치기');
+    } else {
+      widget.classList.remove('collapsed');
+      if (toggleBtn) toggleBtn.setAttribute('title', '달력 접기');
+    }
+
+    chrome.storage.local.set({ bbitsCalendarCollapsed: collapsed });
+  },
+
+  setLoading(isLoading) {
+    const overlay = document.querySelector('#bbits-cal-loading-overlay');
+    if (!overlay) return;
+    if (isLoading) {
+      overlay.classList.add('active');
+    } else {
+      overlay.classList.remove('active');
+    }
+  },
+
+  async prevMonth() {
+    let y = this.viewYear;
+    let m = this.viewMonth - 1;
+    if (m < 1) {
+      m = 12;
+      y--;
+    }
+    await this.navigateToMonth(y, m);
+  },
+
+  async nextMonth() {
+    let y = this.viewYear;
+    let m = this.viewMonth + 1;
+    if (m > 12) {
+      m = 1;
+      y++;
+    }
+    await this.navigateToMonth(y, m);
+  },
+
+  async navigateToMonth(year, month) {
+    this.viewYear = year;
+    this.viewMonth = month;
+    this.selectedDay = null;
+
+    const yearEl = document.querySelector('#bbits-cal-year-text');
+    if (yearEl) yearEl.innerText = `${year}년`;
+
+    const monthEl = document.querySelector('#bbits-cal-month-text');
+    if (monthEl) monthEl.innerText = `${month}월`;
+
+    this.renderDetailPanel();
+
+    const cacheKey = `${year}_${month}`;
+    if (this.monthCache[cacheKey]) {
+      this.cachedData = this.monthCache[cacheKey];
+      this.render();
+      return;
+    }
+
+    this.renderEmptyMonthGrid(year, month);
+    this.setLoading(true);
+
+    const reqId = ++this.navRequestId;
+
+    try {
+      const data = await this.fetchMonthCalendar(year, month);
+      if (reqId === this.navRequestId && data) {
+        this.cachedData = data;
+        this.monthCache[cacheKey] = data;
+        this.render();
+        chrome.storage.local.set({
+          bbits_calendar_months: this.monthCache
+        });
+      }
+    } catch (err) {
+      console.error('Failed to load bbits month calendar:', err);
+    } finally {
+      if (reqId === this.navRequestId) {
+        this.setLoading(false);
+      }
+    }
+  },
+
+  renderEmptyMonthGrid(year, month) {
+    const totalDays = new Date(year, month, 0).getDate();
+    const days = [];
+    const now = new Date();
+    for (let day = 1; day <= totalDays; day++) {
+      const isToday = (year === now.getFullYear() && month === (now.getMonth() + 1) && day === now.getDate());
+      const d = new Date(year, month - 1, day);
+      const isWeekend = (d.getDay() === 0 || d.getDay() === 6);
+      days.push({ day, isToday, isWeekend, events: [] });
+    }
+    this.cachedData = {
+      curYear: year,
+      curMonth: month,
+      days,
+      activities: [],
+      dayDueActivitiesMap: {}
+    };
+    this.render();
+  },
+
+  loadCachedData() {
+    chrome.storage.local.get(['bbits_calendar_data', 'bbits_calendar_months'], (res) => {
+      if (chrome.runtime.lastError) return;
+
+      if (res.bbits_calendar_months) {
+        this.monthCache = res.bbits_calendar_months;
+      }
+
+      const today = new Date();
+      const currentMonthKey = `${today.getFullYear()}_${today.getMonth() + 1}`;
+      this.viewYear = today.getFullYear();
+      this.viewMonth = today.getMonth() + 1;
+
+      if (this.monthCache[currentMonthKey]) {
+        this.cachedData = this.monthCache[currentMonthKey];
+        this.render();
+      } else if (res.bbits_calendar_data) {
+        this.cachedData = res.bbits_calendar_data;
+        this.render();
+      } else {
+        this.renderEmptyMonthGrid(this.viewYear, this.viewMonth);
+      }
+
+      // 페이지 접속 시 항상 백그라운드로 1회 새로고침 수행하여 최신 일정 동기화
+      this.fetchAndRefreshData();
+    });
+  },
+
+  handleManualRefresh() {
+    this.fetchAndRefreshData();
+  },
+
+  cleanHtmlForParsing(html) {
+    if (!html) return '';
+    return html
+      .replace(/<script\b[\s\S]*?<\/script>/gi, '')
+      .replace(/<style\b[\s\S]*?<\/style>/gi, '')
+      .replace(/<svg\b[\s\S]*?<\/svg>/gi, '');
+  },
+
+  async fetchWithTimeout(url, options = {}, timeoutMs = 8000) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetch(url, { ...options, credentials: 'same-origin', signal: controller.signal });
+    } finally {
+      clearTimeout(timer);
+    }
+  },
+
+  async fetchAndRefreshData() {
+    const btn = document.querySelector('#bbits-refresh-btn');
+    if (btn) btn.disabled = true;
+
+    const currentMonthKey = `${this.viewYear}_${this.viewMonth}`;
+    if (this.monthCache[currentMonthKey]) {
+      this.cachedData = this.monthCache[currentMonthKey];
+    } else if (!this.cachedData || !this.cachedData.days || this.cachedData.curMonth !== this.viewMonth || this.cachedData.curYear !== this.viewYear) {
+      this.renderEmptyMonthGrid(this.viewYear, this.viewMonth);
+    }
+
+    this.setLoading(true);
+
+    try {
+      const [statusMaps, calDoc] = await Promise.all([
+        this.fetchCourseStatuses(),
+        this.fetchCalendarDoc(this.viewYear, this.viewMonth)
+      ]);
+
+      const data = this.parseCalendarDoc(calDoc, this.viewYear, this.viewMonth, statusMaps);
+      if (data && data.activities) {
+        this.cachedData = data;
+        this.monthCache[`${this.viewYear}_${this.viewMonth}`] = data;
+        const now = Date.now();
+        chrome.storage.local.set({
+          bbits_calendar_data: data,
+          bbits_calendar_months: this.monthCache,
+          bbits_calendar_last_fetch: now
+        });
+        this.render();
+      }
+    } catch (e) {
+      console.error('Failed to fetch bbits calendar data:', e);
+    } finally {
+      this.setLoading(false);
+      if (btn) btn.disabled = false;
+    }
+  },
+
+  async fetchCourseStatuses() {
+    let courseLinks = document.querySelectorAll('.course_box a.course_link, a[href*="/course/view.php?id="]');
+    if (courseLinks.length === 0) {
+      if (this.cachedCourses && this.cachedCourses.length > 0) {
+        courseLinks = [];
+      } else {
+        try {
+          const cResp = await this.fetchWithTimeout('https://lms.bbits.ac.kr/');
+          if (cResp.ok) {
+            const cText = await cResp.text();
+            const cleanCText = this.cleanHtmlForParsing(cText);
+            const cDoc = new DOMParser().parseFromString(cleanCText, 'text/html');
+            courseLinks = cDoc.querySelectorAll('.course_box a.course_link, a[href*="/course/view.php?id="]');
+          }
+        } catch (e) {
+          console.warn('Failed to fetch fallback bbits course list:', e);
+        }
+      }
+    }
+
+    const coursesMap = new Map();
+    if (this.cachedCourses && this.cachedCourses.length > 0) {
+      this.cachedCourses.forEach(c => coursesMap.set(c.id, c));
+    }
+
+    courseLinks.forEach(a => {
+      const m = a.href.match(/id=([0-9]+)/);
+      if (m) {
+        const id = m[1];
+        if (parseInt(id, 10) <= 1) return; // 사이트 기본 강좌 제외
+        let name = this.cleanCourseName(a.innerText || a.getAttribute('title') || '');
+        if (name && !coursesMap.has(id)) {
+          coursesMap.set(id, { id, name });
+        }
+      }
+    });
+
+    const courses = Array.from(coursesMap.values());
+    this.cachedCourses = courses;
+
+    const statusResults = await Promise.all(courses.map(async (c) => {
+      const info = { courseId: c.id, courseName: c.name, items: {} };
+      try {
+        const [courseRes, assignRes] = await Promise.all([
+          this.fetchWithTimeout(`https://lms.bbits.ac.kr/course/view.php?id=${c.id}`),
+          this.fetchWithTimeout(`https://lms.bbits.ac.kr/mod/assign/index.php?id=${c.id}`)
+        ]);
+
+        if (courseRes.ok) {
+          const cText = await courseRes.text();
+          const cleanCText = this.cleanHtmlForParsing(cText);
+          const cDoc = new DOMParser().parseFromString(cleanCText, 'text/html');
+
+          // VOD 동영상 강의 파싱
+          cDoc.querySelectorAll('li.activity.vod').forEach(li => {
+            const link = li.querySelector('a[href*="/mod/vod/view.php?id="]');
+            if (!link) return;
+            const m = link.href.match(/id=([0-9]+)/);
+            if (!m) return;
+            const modId = m[1];
+
+            const instanceEl = li.querySelector('.instancename');
+            let name = '';
+            if (instanceEl) {
+              const clone = instanceEl.cloneNode(true);
+              clone.querySelectorAll('.accesshide').forEach(el => el.remove());
+              name = clone.innerText.trim();
+            } else {
+              name = link.innerText.trim();
+            }
+
+            const rawPeriod = li.querySelector('.text-ubstrap')?.innerText.trim() || '';
+            let parsedPeriod = '';
+            const periodMatches = rawPeriod.match(/(\d{4})-(\d{1,2})-(\d{1,2})/g);
+            let startDay = null;
+            let dueDay = null;
+            let dueYear = null;
+            let dueMonth = null;
+            let startYear = null;
+            let startMonth = null;
+
+            if (periodMatches && periodMatches.length >= 2) {
+              const [sY, sM, sD] = periodMatches[0].split('-').map(Number);
+              const [dY, dM, dD] = periodMatches[1].split('-').map(Number);
+              startYear = sY; startMonth = sM; startDay = sD;
+              dueYear = dY; dueMonth = dM; dueDay = dD;
+              parsedPeriod = `${sM}월 ${sD}일 ~ ${dM}월 ${dD}일`;
+            } else if (periodMatches && periodMatches.length === 1) {
+              const [dY, dM, dD] = periodMatches[0].split('-').map(Number);
+              dueYear = dY; dueMonth = dM; dueDay = dD;
+              parsedPeriod = `${dM}월 ${dD}일 마감`;
+            }
+
+            const progressText = li.querySelector('.modtype_video_info_progress')?.innerText.trim() || '';
+            const isCompleted = li.querySelector('.video_completed') !== null || (progressText && progressText.includes('100%'));
+
+            info.items[modId] = {
+              modId,
+              name,
+              href: link.href,
+              courseName: c.name,
+              type: '강의',
+              comp: 'mod_vod',
+              isCompleted,
+              parsedPeriod,
+              startYear,
+              startMonth,
+              startDay,
+              dueYear,
+              dueMonth,
+              dueDay
+            };
+          });
+        }
+
+        if (assignRes.ok) {
+          const aText = await assignRes.text();
+          const cleanAText = this.cleanHtmlForParsing(aText);
+          const aDoc = new DOMParser().parseFromString(cleanAText, 'text/html');
+
+          aDoc.querySelectorAll('table tr').forEach(tr => {
+            const link = tr.querySelector('a[href*="/mod/assign/view.php?id="]');
+            if (!link) return;
+            const m = link.href.match(/id=([0-9]+)/);
+            if (!m) return;
+            const modId = m[1];
+
+            const name = link.innerText.trim();
+            const dueTd = tr.querySelector('td.c2') || tr.querySelector('td:nth-child(3)');
+            const statusTd = tr.querySelector('td.c3') || tr.querySelector('td:nth-child(4)');
+            const weekTd = tr.querySelector('td.c0') || tr.querySelector('td:first-child');
+
+            const rawDue = dueTd ? dueTd.innerText.trim() : '';
+            const statusText = statusTd ? statusTd.innerText.trim() : tr.innerText;
+            const isCompleted = this.checkIsCompleted(statusText, tr);
+
+            let dueYear = null;
+            let dueMonth = null;
+            let dueDay = null;
+            let startYear = null;
+            let startMonth = null;
+            let startDay = null;
+            let parsedPeriod = '';
+
+            const dueMatch = rawDue.match(/(\d{4})-(\d{1,2})-(\d{1,2})/);
+            if (dueMatch) {
+              dueYear = parseInt(dueMatch[1], 10);
+              dueMonth = parseInt(dueMatch[2], 10);
+              dueDay = parseInt(dueMatch[3], 10);
+              parsedPeriod = `${dueMonth}월 ${dueDay}일 마감`;
+            }
+
+            const weekText = weekTd ? weekTd.innerText.trim() : '';
+            const weekMatch = weekText.match(/(\d{1,2})월\s*(\d{1,2})일\s*[-~]\s*(\d{1,2})월\s*(\d{1,2})일/);
+            if (weekMatch) {
+              startMonth = parseInt(weekMatch[1], 10);
+              startDay = parseInt(weekMatch[2], 10);
+              const endM = parseInt(weekMatch[3], 10);
+              const endD = parseInt(weekMatch[4], 10);
+              parsedPeriod = `${startMonth}월 ${startDay}일 ~ ${dueMonth || endM}월 ${dueDay || endD}일`;
+            }
+
+            info.items[modId] = {
+              modId,
+              name,
+              href: link.href,
+              courseName: c.name,
+              type: '과제',
+              comp: 'mod_assign',
+              isCompleted,
+              parsedPeriod,
+              startYear,
+              startMonth,
+              startDay,
+              dueYear,
+              dueMonth,
+              dueDay
+            };
+          });
+        }
+      } catch (err) {
+        console.warn('BBITS Calendar: course status fetch error for', c.id, err);
+      }
+      return info;
+    }));
+
+    const globalStatusMap = {};
+    const nameStatusMap = {};
+    statusResults.forEach(sr => {
+      Object.assign(globalStatusMap, sr.items);
+      Object.values(sr.items).forEach(item => {
+        if (item.name) {
+          const cleanName = item.name.replace(/\s+/g, '');
+          nameStatusMap[`${sr.courseName}_${cleanName}`] = item;
+        }
+      });
+    });
+
+    this.cachedStatusMap = globalStatusMap;
+    this.cachedNameStatusMap = nameStatusMap;
+    return { globalStatusMap, nameStatusMap };
+  },
+
+  async fetchCalendarDoc(year, month) {
+    const timestamp = Math.floor(new Date(year, month - 1, 1, 12, 0, 0).getTime() / 1000);
+    const calResp = await this.fetchWithTimeout(`https://lms.bbits.ac.kr/calendar/view.php?view=month&time=${timestamp}`);
+    const calText = await calResp.text();
+
+    if (calResp.redirected && calResp.url.includes('/login/')) {
+      throw new Error('Session expired: redirected to login');
+    }
+    const cleanHtml = this.cleanHtmlForParsing(calText);
+    return new DOMParser().parseFromString(cleanHtml, 'text/html');
+  },
+
+  async fetchMonthCalendar(year, month, forceStatusFetch = false) {
+    let statusMaps = {
+      globalStatusMap: this.cachedStatusMap || {},
+      nameStatusMap: this.cachedNameStatusMap || {}
+    };
+
+    if (forceStatusFetch || !this.cachedStatusMap) {
+      statusMaps = await this.fetchCourseStatuses();
+    }
+
+    const calDoc = await this.fetchCalendarDoc(year, month);
+    return this.parseCalendarDoc(calDoc, year, month, statusMaps);
+  },
+
+  parseCalendarDoc(calDoc, curYear, curMonth, statusMaps) {
+    const globalStatusMap = statusMaps?.globalStatusMap || this.cachedStatusMap || {};
+    const nameStatusMap = statusMaps?.nameStatusMap || this.cachedNameStatusMap || {};
+    const totalDays = new Date(curYear, curMonth, 0).getDate();
+    const dayCells = calDoc.querySelectorAll('td.day');
+
+    const rawEvents = [];
+    const days = [];
+    const now = new Date();
+
+    if (dayCells.length > 0) {
+      dayCells.forEach(td => {
+        if (td.classList.contains('othermonth') || td.classList.contains('noday')) return;
+        const dayDiv = td.querySelector('.day');
+        const dayText = dayDiv ? dayDiv.innerText.replace(/[^0-9]/g, '') : '';
+        const day = dayText ? parseInt(dayText, 10) : null;
+        if (!day || day < 1 || day > totalDays) return;
+
+        const isToday = (curYear === now.getFullYear() && curMonth === (now.getMonth() + 1) && day === now.getDate());
+        const dObj = new Date(curYear, curMonth - 1, day);
+        const isWeekend = (dObj.getDay() === 0 || dObj.getDay() === 6);
+
+        const dayEvents = [];
+
+        td.querySelectorAll('ul.events-new li.calendar_event_course a, li[data-region="event-item"] a, ul.events-new li a').forEach(a => {
+          const href = a.href || '';
+          let title = a.getAttribute('title') || a.innerText || '';
+          title = title.replace(/&nbsp;/g, ' ').replace(/기한$/, '').trim();
+
+          const modIdMatch = href.match(/id=([0-9]+)/);
+          let modId = modIdMatch ? modIdMatch[1] : '';
+          if (href.includes('/calendar/view.php')) {
+            modId = '';
+          }
+
+          let statusInfo = modId ? globalStatusMap[modId] : null;
+          if (!statusInfo && title) {
+            const cleanT = title.replace(/\s+/g, '');
+            const matchedKey = Object.keys(nameStatusMap).find(k => k.endsWith(`_${cleanT}`));
+            if (matchedKey) statusInfo = nameStatusMap[matchedKey];
+          }
+
+          const isCompleted = statusInfo ? statusInfo.isCompleted : false;
+          const courseName = statusInfo ? statusInfo.courseName : '공유대학 강좌';
+          const parsedPeriod = statusInfo ? statusInfo.parsedPeriod : '';
+          const type = statusInfo ? statusInfo.type : (title.includes('과제') ? '과제' : title.includes('동영상') || title.includes('강의') ? '강의' : '활동');
+
+          const ev = {
+            day,
+            modId,
+            type,
+            title,
+            href: (statusInfo && statusInfo.href) || href,
+            isCompleted,
+            courseName,
+            parsedPeriod
+          };
+
+          dayEvents.push(ev);
+          rawEvents.push(ev);
+        });
+
+        days.push({
+          day,
+          isToday,
+          isWeekend,
+          events: dayEvents
+        });
+      });
+    }
+
+    if (days.length === 0) {
+      for (let day = 1; day <= totalDays; day++) {
+        const isToday = (curYear === now.getFullYear() && curMonth === (now.getMonth() + 1) && day === now.getDate());
+        const dObj = new Date(curYear, curMonth - 1, day);
+        const isWeekend = (dObj.getDay() === 0 || dObj.getDay() === 6);
+        days.push({ day, isToday, isWeekend, events: [] });
+      }
+    }
+
+    days.sort((a, b) => a.day - b.day);
+
+    const uniqueMap = new Map();
+    rawEvents.forEach(ev => {
+      const key = ev.modId
+        ? `${ev.courseName}_mod_${ev.modId}`
+        : `${ev.courseName}_title_${ev.title}_${ev.day}`;
+
+      if (!uniqueMap.has(key)) {
+        uniqueMap.set(key, {
+          ...ev,
+          startDay: ev.day,
+          dueDay: ev.day
+        });
+      } else {
+        const existing = uniqueMap.get(key);
+        if (ev.day < existing.startDay) existing.startDay = ev.day;
+        if (ev.day > existing.dueDay) existing.dueDay = ev.day;
+        if (ev.isCompleted !== undefined && !ev.isCompleted) existing.isCompleted = false;
+        if (ev.parsedPeriod && !existing.parsedPeriod) existing.parsedPeriod = ev.parsedPeriod;
+      }
+    });
+
+    // 강좌 활동 현황(VOD, 과제) 중 해당 월에 마감인 항목 캘린더에 완벽 반영
+    if (globalStatusMap) {
+      Object.values(globalStatusMap).forEach(item => {
+        let itemDueYear = item.dueYear || curYear;
+        let itemDueMonth = item.dueMonth;
+        let itemDueDay = item.dueDay;
+        let itemStartDay = item.startDay;
+
+        if (!itemDueMonth && item.parsedPeriod) {
+          const matches = [...item.parsedPeriod.matchAll(/(\d{1,2})월\s*(\d{1,2})일/g)];
+          if (matches.length > 0) {
+            const lastMatch = matches[matches.length - 1];
+            itemDueMonth = parseInt(lastMatch[1], 10);
+            itemDueDay = parseInt(lastMatch[2], 10);
+            if (matches.length >= 2) {
+              itemStartDay = parseInt(matches[0][2], 10);
+            }
+          }
+        }
+
+        if (itemDueYear === curYear && itemDueMonth === curMonth && itemDueDay >= 1 && itemDueDay <= totalDays) {
+          const key = `${item.courseName}_mod_${item.modId}`;
+          if (!uniqueMap.has(key)) {
+            const newAct = {
+              day: itemDueDay,
+              startDay: itemStartDay || itemDueDay,
+              dueDay: itemDueDay,
+              modId: item.modId,
+              type: item.type || (item.name.includes('과제') ? '과제' : '강의'),
+              title: item.name,
+              href: item.href || '',
+              isCompleted: item.isCompleted,
+              courseName: item.courseName,
+              parsedPeriod: item.parsedPeriod
+            };
+            uniqueMap.set(key, newAct);
+
+            const targetDayObj = days.find(d => d.day === itemDueDay);
+            if (targetDayObj) {
+              targetDayObj.events.push(newAct);
+            }
+          } else {
+            const existing = uniqueMap.get(key);
+            existing.dueDay = itemDueDay;
+            if (itemStartDay) existing.startDay = itemStartDay;
+            existing.isCompleted = item.isCompleted;
+            if (item.parsedPeriod) existing.parsedPeriod = item.parsedPeriod;
+          }
+        }
+      });
+    }
+
+    const uniqueActivities = Array.from(uniqueMap.values());
+    const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+
+    uniqueActivities.forEach(item => {
+      const dueMidnight = new Date(curYear, curMonth - 1, item.dueDay).getTime();
+      const diff = Math.round((dueMidnight - todayMidnight) / (1000 * 60 * 60 * 24));
+      item.dDayDiff = diff;
+
+      if (item.isCompleted) {
+        item.statusType = 'done';
+        item.statusLabel = '완료';
+        item.dDayText = '완료';
+      } else if (diff < 0) {
+        item.statusType = 'passed';
+        item.statusLabel = '기한 지남';
+        item.dDayText = `${Math.abs(diff)}일 전 마감`;
+      } else if (diff === 0) {
+        item.statusType = 'pending';
+        item.statusLabel = '오늘 마감';
+        item.dDayText = '오늘 마감';
+      } else if (diff === 1) {
+        item.statusType = 'pending';
+        item.statusLabel = 'D-1';
+        item.dDayText = 'D-1';
+      } else {
+        item.statusType = 'pending';
+        item.statusLabel = '미완료';
+        item.dDayText = `D-${diff}`;
+      }
+
+      item.periodText = this.formatPeriodText(item.parsedPeriod, curYear, curMonth, item.startDay, item.dueDay);
+    });
+
+    const dayDueActivitiesMap = {};
+    uniqueActivities.forEach(act => {
+      if (!dayDueActivitiesMap[act.dueDay]) {
+        dayDueActivitiesMap[act.dueDay] = [];
+      }
+      dayDueActivitiesMap[act.dueDay].push(act);
+    });
+
+    uniqueActivities.sort((a, b) => {
+      const rank = { pending: 1, passed: 2, done: 3 };
+      if (rank[a.statusType] !== rank[b.statusType]) {
+        return rank[a.statusType] - rank[b.statusType];
+      }
+      return a.dueDay - b.dueDay;
+    });
+
+    return {
+      curYear,
+      curMonth,
+      days,
+      activities: uniqueActivities,
+      dayDueActivitiesMap
+    };
+  },
+
+  render() {
+    if (!this.cachedData) return;
+    const { curYear, curMonth, days } = this.cachedData;
+
+    const yearEl = document.querySelector('#bbits-cal-year-text');
+    if (yearEl) yearEl.innerText = `${curYear}년`;
+
+    const monthEl = document.querySelector('#bbits-cal-month-text');
+    if (monthEl) monthEl.innerText = `${curMonth}월`;
+
+    this.renderLargeDaysGrid(days, curYear, curMonth);
+    this.renderDetailPanel();
+  },
+
+  renderLargeDaysGrid(days, curYear, curMonth) {
+    const grid = document.querySelector('#bbits-large-days-grid');
+    if (!grid) return;
+    grid.innerHTML = '';
+
+    const dayDueMap = this.cachedData?.dayDueActivitiesMap || {};
+
+    const firstDay = days[0];
+    if (firstDay && firstDay.day === 1) {
+      const d = new Date(curYear, curMonth - 1, 1);
+      const startDayOfWeek = d.getDay();
+      for (let i = 0; i < startDayOfWeek; i++) {
+        const empty = document.createElement('div');
+        empty.className = 'plato-large-day-cell empty';
+        grid.appendChild(empty);
+      }
+    }
+
+    const now = new Date();
+
+    days.forEach((d) => {
+      const cell = document.createElement('div');
+      cell.className = 'plato-large-day-cell';
+
+      const isToday = (curYear === now.getFullYear() && curMonth === (now.getMonth() + 1) && d.day === now.getDate());
+      if (isToday) cell.classList.add('today');
+      if (this.selectedDay === d.day) cell.classList.add('selected');
+
+      const dayOfWeek = new Date(curYear, curMonth - 1, d.day).getDay();
+      if (dayOfWeek === 0) cell.classList.add('weekend-sun');
+      if (dayOfWeek === 6) cell.classList.add('weekend-sat');
+
+      const dueActs = dayDueMap[d.day] || [];
+      const pendingCount = dueActs.filter(a => a.statusType === 'pending').length;
+      const doneCount = dueActs.filter(a => a.statusType === 'done').length;
+      const passedCount = dueActs.filter(a => a.statusType === 'passed').length;
+
+      if (pendingCount > 0) {
+        cell.classList.add('has-pending');
+      } else if (doneCount > 0 && passedCount === 0) {
+        cell.classList.add('all-done');
+      }
+
+      let countBadgeHtml = '';
+      if (pendingCount > 0) {
+        countBadgeHtml = `<span class="plato-day-badge badge-pending">${pendingCount}</span>`;
+      } else if (doneCount > 0) {
+        countBadgeHtml = `<span class="plato-day-badge badge-done"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;"><polyline points="20 6 9 17 4 12"></polyline></svg></span>`;
+      } else if (passedCount > 0) {
+        countBadgeHtml = `<span class="plato-day-badge badge-passed">${passedCount}</span>`;
+      }
+
+      let chipsHtml = '';
+      if (dueActs.length > 0) {
+        const maxDisplay = 2;
+        const visibleActs = dueActs.slice(0, maxDisplay);
+        const remainCount = dueActs.length - maxDisplay;
+
+        const chipsList = visibleActs.map(act => {
+          return `
+            <span class="plato-event-chip chip-${act.statusType}" title="[${act.courseName}] ${act.title}">
+              ${act.title}
+            </span>
+          `;
+        }).join('');
+
+        const moreBadge = remainCount > 0 ? `<div class="plato-more-chips-badge">+${remainCount}</div>` : '';
+        chipsHtml = `<div class="plato-day-events-container">${chipsList}${moreBadge}</div>`;
+      } else {
+        chipsHtml = `<div class="plato-day-events-container"></div>`;
+      }
+
+      const dayTooltip = isToday ? `오늘 (${d.day}일)` : `${d.day}일`;
+      cell.innerHTML = `
+        <div class="plato-day-top-row">
+          <span class="plato-day-num" title="${dayTooltip}">${d.day}</span>
+          ${countBadgeHtml}
+        </div>
+        ${chipsHtml}
+      `;
+
+      cell.addEventListener('click', () => {
+        if (this.selectedDay === d.day) {
+          this.selectedDay = null;
+          cell.classList.remove('selected');
+        } else {
+          document.querySelectorAll('#bbits-calendar-widget .plato-large-day-cell.selected').forEach(c => c.classList.remove('selected'));
+          this.selectedDay = d.day;
+          cell.classList.add('selected');
+        }
+        this.renderDetailPanel();
+
+        const detailPanel = document.querySelector('#bbits-calendar-detail-panel');
+        if (detailPanel && this.selectedDay !== null) {
+          detailPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+      });
+
+      grid.appendChild(cell);
+    });
+  },
+
+  renderDetailPanel() {
+    const panel = document.querySelector('#bbits-calendar-detail-panel');
+    const grid = document.querySelector('#bbits-detail-cards-grid');
+    const titleText = document.querySelector('#bbits-detail-title-text');
+    const closeBtn = document.querySelector('#bbits-detail-close-btn');
+    if (!panel || !grid) return;
+
+    if (this.selectedDay === null) {
+      panel.style.display = 'none';
+      grid.innerHTML = '';
+      return;
+    }
+
+    panel.style.display = 'block';
+
+    if (!this.cachedData) return;
+
+    const items = (this.cachedData.activities || []).filter(a => a.dueDay === this.selectedDay);
+    const curYear = this.cachedData.curYear;
+    const curMonth = this.cachedData.curMonth;
+    const d = new Date(curYear, curMonth - 1, this.selectedDay);
+    const dayName = this.WEEKDAYS_KO[d.getDay()] || '';
+
+    if (titleText) {
+      titleText.innerText = `${curMonth}월 ${this.selectedDay}일(${dayName}) 마감 일정 (${items.length})`;
+    }
+    if (closeBtn) {
+      closeBtn.innerText = '닫기';
+      closeBtn.style.display = 'inline-block';
+    }
+
+    if (items.length === 0) {
+      grid.innerHTML = `
+        <div class="plato-tasks-empty">
+          <span>${this.selectedDay}일에 예정된 마감 일정이 없습니다.</span>
+        </div>
+      `;
+      return;
+    }
+
+    grid.innerHTML = items.map(item => {
+      return `
+        <a href="${item.href}" class="plato-task-card card-${item.statusType}" target="_blank" rel="noopener noreferrer">
+          <div class="plato-task-card-header">
+            <span class="plato-task-course">[${item.type}] ${item.courseName}</span>
+            <span class="plato-task-status-badge badge-${item.statusType}">${item.statusLabel}</span>
+          </div>
+          <span class="plato-task-name" title="${item.title}">${item.title}</span>
+          <div class="plato-task-meta">
+            <span class="plato-task-period">${item.periodText}</span>
+            <span class="plato-task-dday dday-${item.statusType}">${item.dDayText}</span>
+          </div>
+        </a>
+      `;
+    }).join('');
+  }
+};
+
 const attemptLogin = () => {
   if (!chrome.runtime?.id) return;
   try {
@@ -1074,7 +2167,7 @@ const attemptLogin = () => {
     chrome.storage.local.get([
       "hjsId", "hjsPw", "hjsToggle", "hjsPopupClose",
       "userId", "userPw", "popupToggle", "platoPopupClose", "platoCalendarToggle",
-      "bbitsId", "bbitsPw", "bbitsToggle", "bbitsPopupClose"
+      "bbitsId", "bbitsPw", "bbitsToggle", "bbitsPopupClose", "bbitsCalendarToggle"
     ], (data) => {
       if (!chrome.runtime?.id || chrome.runtime.lastError) return;
     
@@ -1136,8 +2229,16 @@ const attemptLogin = () => {
       if (data.bbitsPopupClose) {
         document.querySelectorAll('[data-action="just_close"], .modal .close, .modal .btn-close').forEach(b => b.click());
       }
+
+      const isBbitsLoggedIn = !!document.querySelector('[data-action*="logout"], .logout, a[href*="logout"]');
+      if (isBbitsLoggedIn) {
+        if (data.bbitsCalendarToggle !== false) {
+          BbitsCalendar.init();
+        }
+        return;
+      }
+
       if (!data.bbitsToggle) return;
-      if (document.querySelector('[data-action*="logout"], .logout, a[href*="logout"]')) return;
 
       // 1. LMS 페이지 (https://lms.bbits.ac.kr/login.php 등) 로그인 처리
       const lmsUnivSelect = document.querySelector('select#univid, select[name="univid"]');
@@ -1442,4 +2543,9 @@ const checkInterval = setInterval(() => {
 if (window.location.hostname === "plato.pusan.ac.kr" &&
     (window.location.pathname.includes("/local/ubion/allcourse/regular/index.php") || window.location.pathname.includes("/local/ubion/allcourse/"))) {
   PlatoCalendar.init();
+}
+
+// 부산공유대학 메인 대시보드 진입 시 캘린더 즉시 초기화
+if (window.location.hostname === "lms.bbits.ac.kr") {
+  BbitsCalendar.init();
 }

@@ -12,15 +12,16 @@ document.addEventListener("DOMContentLoaded", () => {
         bbitsId: document.getElementById("bbitsId"),
         bbitsPw: document.getElementById("bbitsPw"),
         bbitsToggle: document.getElementById("bbitsToggle"),
-        bbitsPopupClose: document.getElementById("bbitsPopupClose")
+        bbitsPopupClose: document.getElementById("bbitsPopupClose"),
+        bbitsCalendarToggle: document.getElementById("bbitsCalendarToggle")
     };
 
     chrome.storage.local.get(Object.keys(fields), (data) => {
         Object.keys(fields).forEach(key => {
             if (!fields[key]) return;
             if (fields[key].type === "checkbox") {
-                // platoCalendarToggle은 기본값이 true
-                if (key === "platoCalendarToggle") {
+                // platoCalendarToggle 및 bbitsCalendarToggle은 기본값이 true
+                if (key === "platoCalendarToggle" || key === "bbitsCalendarToggle") {
                     fields[key].checked = data[key] !== false;
                 } else {
                     fields[key].checked = !!data[key];

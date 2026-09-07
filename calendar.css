@@ -3,7 +3,8 @@
    Fixed-width columns, no text-stretching, clean typography, no emoji clutter
    ========================================================================== */
 
-#plato-calendar-widget {
+#plato-calendar-widget,
+#bbits-calendar-widget {
   all: initial;
   display: block;
   font-family: -apple-system, BlinkMacSystemFont, "Pretendard", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
@@ -19,7 +20,8 @@
   width: 100%;
 }
 
-#plato-calendar-widget * {
+#plato-calendar-widget *,
+#bbits-calendar-widget * {
   box-sizing: border-box;
 }
 
@@ -752,17 +754,20 @@
 /* ==========================================================================
    접힌 상태 (COLLAPSED STATE) - 본문 전체 접힘
    ========================================================================== */
-#plato-calendar-widget.collapsed {
+#plato-calendar-widget.collapsed,
+#bbits-calendar-widget.collapsed {
   padding: 8px 10px;
   margin: 12px 0 20px 0;
   box-shadow: 0 2px 8px rgba(15, 23, 42, 0.03);
 }
 
-#plato-calendar-widget.collapsed .plato-cal-collapsible-body {
+#plato-calendar-widget.collapsed .plato-cal-collapsible-body,
+#bbits-calendar-widget.collapsed .plato-cal-collapsible-body {
   display: none;
 }
 
-#plato-calendar-widget.collapsed .plato-toggle-triangle {
+#plato-calendar-widget.collapsed .plato-toggle-triangle,
+#bbits-calendar-widget.collapsed .plato-toggle-triangle {
   transform: rotate(180deg);
 }
 
