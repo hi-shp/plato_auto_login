@@ -10,8 +10,8 @@
   margin: 12px 0 20px 0;
   background: #ffffff;
   border-radius: 14px;
-  border: 1.5px solid #cbd5e1;
-  box-shadow: 0 4px 20px rgba(15, 23, 42, 0.06);
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.04);
   padding: 8px 10px 16px 10px;
   box-sizing: border-box;
   color: #0f172a;
@@ -34,7 +34,7 @@
   align-items: center;
   padding: 8px 14px;
   background: #f8fafc;
-  border: 1.5px solid #cbd5e1;
+  border: 1px solid #e2e8f0;
   border-radius: 10px;
   user-select: none;
 }
@@ -47,8 +47,8 @@
 }
 
 .plato-cal-brand-title {
-  font-size: 16.5px;
-  font-weight: 900;
+  font-size: 16px;
+  font-weight: 800;
   color: #0f172a;
   letter-spacing: -0.4px;
   display: inline-flex;
@@ -67,21 +67,21 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 25px;
-  height: 25px;
+  width: 24px;
+  height: 24px;
   padding: 0;
   background: #ffffff;
-  border: 1.5px solid #94a3b8;
+  border: 1px solid #cbd5e1;
   border-radius: 6px;
-  color: #334155;
+  color: #475569;
   cursor: pointer;
   transition: all 0.15s ease;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
 }
 
 .plato-cal-toggle-btn:hover {
   background: #f1f5f9;
-  border-color: #64748b;
+  border-color: #94a3b8;
   color: #0f172a;
 }
 
@@ -105,31 +105,28 @@
 .plato-refresh-btn {
   background: #0284c7;
   color: #ffffff;
-  border: 1.5px solid #0284c7;
+  border: 1px solid #0284c7;
   font-size: 12.5px;
-  font-weight: 700;
-  padding: 6px 14px;
+  font-weight: 600;
+  padding: 6px 13px;
   border-radius: 8px;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   gap: 2px;
-  box-shadow: 0 2px 4px rgba(2, 132, 199, 0.25);
   transition: all 0.15s ease;
 }
 
 .plato-refresh-btn:hover:not(:disabled) {
   background: #0369a1;
   border-color: #0369a1;
-  box-shadow: 0 3px 8px rgba(2, 132, 199, 0.35);
 }
 
 .plato-refresh-btn:disabled {
   background: #f1f5f9;
   color: #94a3b8;
-  border-color: #cbd5e1;
+  border-color: #e2e8f0;
   cursor: not-allowed;
-  box-shadow: none;
 }
 
 .plato-btn-icon {
@@ -153,12 +150,12 @@
   text-align: center;
   padding: 6px 0 16px 0;
   margin-bottom: 6px;
-  border-bottom: 2px solid #e2e8f0;
+  border-bottom: 1px solid #e2e8f0;
 }
 
 .plato-cal-year {
   font-size: 14px;
-  font-weight: 700;
+  font-weight: 600;
   color: #64748b;
   letter-spacing: 0.5px;
   line-height: 1.2;
@@ -166,8 +163,8 @@
 
 .plato-cal-month {
   margin: 2px 0 0 0;
-  font-size: 35px;
-  font-weight: 900;
+  font-size: 34px;
+  font-weight: 800;
   color: #0f172a;
   letter-spacing: -1.2px;
   line-height: 1.1;
@@ -185,14 +182,14 @@
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
   text-align: center;
-  background: #f1f5f9;
-  border: 1.5px solid #cbd5e1;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
   border-radius: 8px;
-  padding: 9px 0;
+  padding: 8px 0;
   margin-bottom: 8px;
-  font-size: 14.5px;
-  font-weight: 900;
-  color: #1e293b;
+  font-size: 14px;
+  font-weight: 800;
+  color: #334155;
   letter-spacing: -0.2px;
 }
 
@@ -204,13 +201,13 @@
 }
 
 .plato-cal-weekdays span:first-child {
-  color: #dc2626; /* 일 */
-  font-weight: 900;
+  color: #ef4444; /* 일 */
+  font-weight: 800;
 }
 
 .plato-cal-weekdays span:last-child {
-  color: #1d4ed8; /* 토 */
-  font-weight: 900;
+  color: #2563eb; /* 토 */
+  font-weight: 800;
 }
 
 /* Strictly Fixed 7-Column Grid: minmax(0, 1fr) ensures content never stretches columns */
@@ -223,9 +220,9 @@
 
 /* Day Cell: strictly fixed width, no expanding */
 .plato-large-day-cell {
-  height: 108px;
+  height: 106px;
   background: #ffffff;
-  border: 1.5px solid #cbd5e1;
+  border: 1px solid #e2e8f0;
   border-radius: 10px;
   padding: 6px 8px;
   display: flex;
@@ -234,26 +231,25 @@
   position: relative;
   min-width: 0;
   overflow: hidden;
-  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.03);
-  transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease, transform 0.1s ease;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
+  transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
   user-select: none;
 }
 
 .plato-large-day-cell:hover:not(.empty) {
   background: #ffffff;
-  border-color: #64748b;
-  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
-  transform: translateY(-1px);
+  border-color: #cbd5e1;
+  box-shadow: 0 3px 8px rgba(15, 23, 42, 0.05);
 }
 
 /* 안된 것(미완료) 있는 날: 상단에 선명한 빨간 액센트 바 */
 .plato-large-day-cell.has-pending {
-  border-top: 4px solid #ef4444;
+  border-top: 3px solid #ef4444;
 }
 
 /* 전부 완료된 날: 상단에 선명한 초록 액센트 바 */
 .plato-large-day-cell.all-done {
-  border-top: 4px solid #10b981;
+  border-top: 3px solid #10b981;
 }
 
 .plato-large-day-cell.empty {
@@ -261,19 +257,17 @@
   background: transparent;
   border-color: transparent;
   box-shadow: none;
-  transform: none;
 }
 
 .plato-large-day-cell.today {
   background: #ffffff;
-  border: 2px solid #0f172a;
-  box-shadow: 0 0 0 1px #0f172a, 0 4px 12px rgba(15, 23, 42, 0.12);
+  border: 1.5px solid #0f172a;
+  box-shadow: 0 0 0 1px #0f172a, 0 3px 8px rgba(15, 23, 42, 0.08);
 }
 
 .plato-large-day-cell.selected {
   background: #e0f2fe !important;
-  border: 2px solid #0284c7 !important;
-  box-shadow: 0 0 0 1px #0284c7, 0 4px 12px rgba(2, 132, 199, 0.15);
+  border: 1.5px solid #0284c7 !important;
 }
 
 /* Day Cell Top Row: Date Number + Clean Bold Numeric Badge */
@@ -286,8 +280,8 @@
 }
 
 .plato-day-num {
-  font-size: 16.5px;
-  font-weight: 900;
+  font-size: 16px;
+  font-weight: 800;
   color: #0f172a;
   width: 28px;
   height: 28px;
@@ -310,45 +304,44 @@
   background: #0f172a !important;
   color: #ffffff !important;
   font-weight: 900;
-  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.4);
+  box-shadow: 0 2px 5px rgba(15, 23, 42, 0.3);
 }
 
 /* 주말 색상 지정: :not(.today)를 적용하여 오늘인 경우 요일 글자색이 원형 배경 안의 흰색 숫자를 덮어쓰지 않도록 보장 */
 .plato-large-day-cell.weekend-sun:not(.today) .plato-day-num {
-  color: #dc2626;
+  color: #ef4444;
   font-weight: 900;
 }
 
 .plato-large-day-cell.weekend-sat:not(.today) .plato-day-num {
-  color: #1d4ed8;
+  color: #2563eb;
   font-weight: 900;
 }
 
 /* 직관적이고 큰 일자 뱃지 (안된것: 빨강, 완료: 초록, 지난것: 회색) */
 .plato-day-badge {
   font-size: 11px;
-  font-weight: 900;
-  padding: 2px 7.5px;
+  font-weight: 800;
+  padding: 2px 7px;
   border-radius: 6px;
   flex-shrink: 0;
   line-height: 1.2;
-  letter-spacing: -0.2px;
 }
 
 .plato-day-badge.badge-pending {
-  background: #dc2626;
+  background: #ef4444;
   color: #ffffff;
-  box-shadow: 0 1.5px 4px rgba(220, 38, 38, 0.4);
+  box-shadow: 0 1px 2px rgba(239, 68, 68, 0.25);
 }
 
 .plato-day-badge.badge-done {
-  background: #059669;
+  background: #10b981;
   color: #ffffff;
-  box-shadow: 0 1.5px 4px rgba(5, 150, 105, 0.4);
+  box-shadow: 0 1px 2px rgba(16, 185, 129, 0.25);
 }
 
 .plato-day-badge.badge-passed {
-  background: #64748b;
+  background: #94a3b8;
   color: #ffffff;
 }
 
@@ -365,7 +358,7 @@
 /* Single line text ellipsis chip: NEVER stretches cell */
 .plato-event-chip {
   font-size: 11px;
-  font-weight: 700;
+  font-weight: 600;
   padding: 3px 6px;
   border-radius: 4px;
   width: 100%;
@@ -373,7 +366,7 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  line-height: 1.35;
+  line-height: 1.3;
   display: block;
 }
 
@@ -381,30 +374,27 @@
 .plato-event-chip.chip-pending {
   background: #fee2e2;
   color: #991b1b;
-  border: 1px solid #fca5a5;
-  border-left: 4.5px solid #dc2626;
+  border-left: 3.5px solid #ef4444;
 }
 
 /* 완료된 것 (초록색 계열) */
 .plato-event-chip.chip-done {
   background: #dcfce7;
   color: #166534;
-  border: 1px solid #86efac;
-  border-left: 4.5px solid #059669;
+  border-left: 3.5px solid #10b981;
 }
 
 /* 지난 것 (회색 계열) */
 .plato-event-chip.chip-passed {
   background: #f1f5f9;
-  color: #334155;
-  border: 1px solid #cbd5e1;
-  border-left: 4.5px solid #64748b;
+  color: #475569;
+  border-left: 3.5px solid #94a3b8;
 }
 
 .plato-more-chips-badge {
-  font-size: 10.5px;
-  font-weight: 800;
-  color: #475569;
+  font-size: 10px;
+  font-weight: 700;
+  color: #64748b;
   padding: 1px 2px;
   text-align: right;
   white-space: nowrap;
@@ -417,33 +407,32 @@
   margin-top: 18px;
   background: #ffffff;
   border-radius: 12px;
-  border: 1.5px solid #cbd5e1;
+  border: 1px solid #e2e8f0;
   padding: 16px 20px;
-  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
 }
 
 .plato-detail-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding-bottom: 12px;
-  margin-bottom: 14px;
-  border-bottom: 2px solid #e2e8f0;
+  padding-bottom: 10px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid #f1f5f9;
 }
 
 .plato-detail-title {
-  font-size: 15px;
-  font-weight: 800;
+  font-size: 14.5px;
+  font-weight: 700;
   color: #0f172a;
 }
 
 .plato-detail-close-btn {
   background: #f1f5f9;
-  border: 1.5px solid #cbd5e1;
-  color: #334155;
+  border: 1px solid #e2e8f0;
+  color: #475569;
   font-size: 12px;
-  font-weight: 700;
-  padding: 4.5px 12px;
+  font-weight: 600;
+  padding: 4px 10px;
   border-radius: 6px;
   cursor: pointer;
   transition: all 0.15s ease;
@@ -451,7 +440,7 @@
 
 .plato-detail-close-btn:hover {
   background: #e2e8f0;
-  border-color: #94a3b8;
+  border-color: #cbd5e1;
   color: #0f172a;
 }
 
@@ -466,35 +455,34 @@
 .plato-task-card {
   background: #f8fafc;
   border-radius: 10px;
-  border: 1.5px solid #cbd5e1;
-  padding: 14px 16px;
+  border: 1px solid #e2e8f0;
+  padding: 13px 15px;
   display: flex;
   flex-direction: column;
   gap: 8px;
   text-decoration: none;
   color: inherit;
-  box-shadow: 0 2px 5px rgba(15, 23, 42, 0.03);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
   transition: all 0.15s ease;
 }
 
 .plato-task-card:hover {
   background: #ffffff;
-  border-color: #64748b;
-  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.09);
-  transform: translateY(-1px);
+  border-color: #cbd5e1;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.06);
 }
 
-/* 직관적이고 굵은 상태 컬러 바 (좌측 6px) */
+/* 직관적이고 깔끔한 상태 컬러 바 (좌측 4.5px) */
 .plato-task-card.card-pending {
-  border-left: 6px solid #dc2626;
+  border-left: 4.5px solid #ef4444;
 }
 
 .plato-task-card.card-done {
-  border-left: 6px solid #059669;
+  border-left: 4.5px solid #10b981;
 }
 
 .plato-task-card.card-passed {
-  border-left: 6px solid #64748b;
+  border-left: 4.5px solid #94a3b8;
 }
 
 .plato-task-card-header {
@@ -505,44 +493,41 @@
 }
 
 .plato-task-course {
-  font-size: 12px;
-  font-weight: 800;
+  font-size: 11.5px;
+  font-weight: 700;
   color: #0284c7;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-/* 크고 선명한 상태 뱃지 */
+/* 산뜻하고 선명한 상태 뱃지 */
 .plato-task-status-badge {
   font-size: 11.5px;
-  font-weight: 800;
+  font-weight: 700;
   padding: 3px 9px;
   border-radius: 6px;
   flex-shrink: 0;
-  letter-spacing: -0.2px;
 }
 
 .plato-task-status-badge.badge-pending {
-  background: #dc2626;
+  background: #ef4444;
   color: #ffffff;
-  box-shadow: 0 1.5px 4px rgba(220, 38, 38, 0.35);
 }
 
 .plato-task-status-badge.badge-done {
-  background: #059669;
+  background: #10b981;
   color: #ffffff;
-  box-shadow: 0 1.5px 4px rgba(5, 150, 105, 0.35);
 }
 
 .plato-task-status-badge.badge-passed {
-  background: #64748b;
+  background: #94a3b8;
   color: #ffffff;
 }
 
 .plato-task-name {
-  font-size: 14px;
-  font-weight: 800;
+  font-size: 13.5px;
+  font-weight: 700;
   color: #0f172a;
   line-height: 1.35;
   white-space: nowrap;
@@ -557,40 +542,36 @@
   align-items: center;
   justify-content: space-between;
   gap: 6px;
-  padding-top: 8px;
-  border-top: 1.5px dashed #cbd5e1;
+  padding-top: 6px;
+  border-top: 1px dashed #e2e8f0;
 }
 
 .plato-task-period {
-  color: #334155;
-  font-weight: 700;
+  color: #475569;
+  font-weight: 600;
   font-size: 12px;
 }
 
 .plato-task-dday {
-  font-size: 11.5px;
-  font-weight: 800;
-  padding: 2.5px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 7px;
   border-radius: 5px;
-  letter-spacing: -0.2px;
 }
 
 .plato-task-dday.dday-pending {
   background: #fee2e2;
-  color: #b91c1c;
-  border: 1px solid #fca5a5;
+  color: #dc2626;
 }
 
 .plato-task-dday.dday-done {
   background: #dcfce7;
   color: #15803d;
-  border: 1px solid #86efac;
 }
 
 .plato-task-dday.dday-passed {
   background: #f1f5f9;
-  color: #475569;
-  border: 1px solid #cbd5e1;
+  color: #64748b;
 }
 
 /* Empty State */
