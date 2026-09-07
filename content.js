@@ -192,10 +192,7 @@ const PlatoCalendar = {
             </button>
             <div class="plato-cal-month-title-wrap">
               <span class="plato-cal-year" id="plato-cal-year-text">${defaultYear}년</span>
-              <div class="plato-cal-month-row">
-                <h2 class="plato-cal-month" id="plato-cal-month-text">${defaultMonth}월</h2>
-                <button type="button" class="plato-cal-today-badge" id="plato-cal-today-btn" title="오늘(이번 달)로 이동" style="display: none;">오늘</button>
-              </div>
+              <h2 class="plato-cal-month" id="plato-cal-month-text">${defaultMonth}월</h2>
             </div>
             <button type="button" class="plato-cal-month-nav-btn next" id="plato-cal-next-btn" title="다음 달">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -243,11 +240,6 @@ const PlatoCalendar = {
     document.querySelector('#plato-cal-next-btn')?.addEventListener('click', (e) => {
       e.stopPropagation();
       this.nextMonth();
-    });
-
-    document.querySelector('#plato-cal-today-btn')?.addEventListener('click', (e) => {
-      e.stopPropagation();
-      this.goToToday();
     });
 
     // 상세 패널 닫기
@@ -312,29 +304,16 @@ const PlatoCalendar = {
     await this.navigateToMonth(y, m);
   },
 
-  async goToToday() {
-    const now = new Date();
-    await this.navigateToMonth(now.getFullYear(), now.getMonth() + 1);
-  },
-
   async navigateToMonth(year, month) {
     this.viewYear = year;
     this.viewMonth = month;
     this.selectedDay = null;
-
-    const today = new Date();
-    const isCurrentMonth = (year === today.getFullYear() && month === (today.getMonth() + 1));
 
     const yearEl = document.querySelector('#plato-cal-year-text');
     if (yearEl) yearEl.innerText = `${year}년`;
 
     const monthEl = document.querySelector('#plato-cal-month-text');
     if (monthEl) monthEl.innerText = `${month}월`;
-
-    const todayBtn = document.querySelector('#plato-cal-today-btn');
-    if (todayBtn) {
-      todayBtn.style.display = isCurrentMonth ? 'none' : 'inline-block';
-    }
 
     this.renderDetailPanel();
 
@@ -881,13 +860,6 @@ const PlatoCalendar = {
 
     const monthEl = document.querySelector('#plato-cal-month-text');
     if (monthEl) monthEl.innerText = `${curMonth}월`;
-
-    const today = new Date();
-    const isCurrentMonth = (curYear === today.getFullYear() && curMonth === (today.getMonth() + 1));
-    const todayBtn = document.querySelector('#plato-cal-today-btn');
-    if (todayBtn) {
-      todayBtn.style.display = isCurrentMonth ? 'none' : 'inline-block';
-    }
 
     this.renderLargeDaysGrid(days, curYear, curMonth);
     this.renderDetailPanel();

@@ -199,13 +199,6 @@
   min-width: 150px;
 }
 
-.plato-cal-month-row {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-}
-
 .plato-cal-year {
   font-size: 14px;
   font-weight: 600;
@@ -221,32 +214,6 @@
   color: #0f172a;
   letter-spacing: -1.2px;
   line-height: 1.1;
-}
-
-.plato-cal-today-badge {
-  background: #e0f2fe;
-  color: #0284c7;
-  border: 1px solid #bae6fd;
-  border-radius: 6px;
-  font-size: 12px;
-  font-weight: 700;
-  padding: 3px 9px;
-  cursor: pointer;
-  transition: all 0.15s ease;
-  line-height: 1.2;
-  margin-top: 4px;
-}
-
-.plato-cal-today-badge:hover {
-  background: #0284c7;
-  color: #ffffff;
-  border-color: #0284c7;
-  box-shadow: 0 2px 6px rgba(2, 132, 199, 0.3);
-  transform: translateY(-1px);
-}
-
-.plato-cal-today-badge:active {
-  transform: translateY(0);
 }
 
 /* ==========================================================================
