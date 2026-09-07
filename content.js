@@ -215,7 +215,7 @@ const PlatoCalendar = {
           <div class="plato-cal-loading-overlay" id="plato-cal-loading-overlay">
             <div class="plato-cal-loading-content">
               <div class="plato-loading-spinner"></div>
-              <span id="plato-loading-text">최신 일정 동기화 중...</span>
+              <span id="plato-loading-text">일정 갱신 중...</span>
             </div>
           </div>
         </div>
@@ -292,7 +292,7 @@ const PlatoCalendar = {
     chrome.storage.local.set({ platoCalendarCollapsed: collapsed });
   },
 
-  setLoading(isLoading, text = '최신 일정 동기화 중...') {
+  setLoading(isLoading, text = '일정 갱신 중...') {
     const overlay = document.querySelector('#plato-cal-loading-overlay');
     const loadingText = document.querySelector('#plato-loading-text');
     if (!overlay) return;
@@ -475,7 +475,7 @@ const PlatoCalendar = {
     // 갱신 중에는 이전 일정 표시를 모두 비우고 기본 그리드만 표시하며 로딩 오버레이 노출
     this.selectedDay = null;
     this.renderEmptyMonthGrid(this.viewYear, this.viewMonth);
-    this.setLoading(true, '최신 일정 동기화 중...');
+    this.setLoading(true, '일정 갱신 중...');
 
     try {
       await this.fetchCourseStatuses();
