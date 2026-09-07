@@ -225,16 +225,16 @@
   position: relative;
 }
 
-/* 갱신/로딩 중 흐림 배경 및 상태 배지 오버레이 */
+/* 갱신/로딩 중 가볍고 은은한 오버레이 */
 .plato-cal-loading-overlay {
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(255, 255, 255, 0.76);
-  backdrop-filter: blur(2.5px);
-  -webkit-backdrop-filter: blur(2.5px);
+  background: rgba(255, 255, 255, 0.55);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
   border-radius: 10px;
   display: flex;
   align-items: center;
@@ -243,6 +243,7 @@
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.2s ease;
+  overflow: hidden;
 }
 
 .plato-cal-loading-overlay.active {
@@ -250,48 +251,80 @@
   pointer-events: auto;
 }
 
-.plato-cal-loading-content {
+/* 상단 은은한 프로그레스 바 */
+.plato-loading-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: rgba(226, 232, 240, 0.6);
+  overflow: hidden;
+}
+
+.plato-loading-bar::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 35%;
+  background: linear-gradient(90deg, transparent, #0284c7, #38bdf8, transparent);
+  border-radius: 2px;
+  animation: platoProgressSweep 1.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+@keyframes platoProgressSweep {
+  0% {
+    left: -35%;
+  }
+  100% {
+    left: 100%;
+  }
+}
+
+/* 중앙 미니멀 3단 펄스 도트 */
+.plato-loading-dots {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 50px;
-  height: 50px;
-  background: #ffffff;
-  border-radius: 50%;
-  border: 1.5px solid #e2e8f0;
-  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
-  color: #0284c7;
+  gap: 8px;
+  padding: 10px 18px;
+  background: rgba(255, 255, 255, 0.85);
+  border: 1px solid #e2e8f0;
+  border-radius: 20px;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.06);
   user-select: none;
 }
 
-.plato-cal-loading-overlay.active .plato-cal-loading-content {
-  animation: platoBadgePop 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+.plato-loading-dots span {
+  width: 7px;
+  height: 7px;
+  background-color: #0284c7;
+  border-radius: 50%;
+  display: inline-block;
+  animation: platoPulseDot 1.1s ease-in-out infinite;
 }
 
-.plato-loading-refresh-icon {
-  width: 24px;
-  height: 24px;
-  color: #0284c7;
-  animation: platoSpin 0.75s linear infinite;
-  display: block;
+.plato-loading-dots span:nth-child(1) {
+  animation-delay: 0s;
 }
 
-@keyframes platoSpin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
+.plato-loading-dots span:nth-child(2) {
+  animation-delay: 0.18s;
 }
 
-@keyframes platoBadgePop {
-  0% {
-    transform: scale(0.92);
-    opacity: 0.8;
+.plato-loading-dots span:nth-child(3) {
+  animation-delay: 0.36s;
+}
+
+@keyframes platoPulseDot {
+  0%, 80%, 100% {
+    transform: scale(0.65);
+    opacity: 0.3;
   }
-  100% {
-    transform: scale(1);
+  40% {
+    transform: scale(1.15);
     opacity: 1;
   }
 }

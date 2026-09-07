@@ -209,14 +209,13 @@ const PlatoCalendar = {
             <!-- 일자 셀들이 여기에 렌더링됨 -->
           </div>
 
-          <!-- 갱신/동기화 중 상태 오버레이 (텍스트 없이 아이콘만 표시) -->
+          <!-- 갱신/동기화 중 상태 오버레이 (가볍고 미니멀한 인디케이터) -->
           <div class="plato-cal-loading-overlay" id="plato-cal-loading-overlay">
-            <div class="plato-cal-loading-content" title="새로고침 중">
-              <svg class="plato-loading-refresh-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                <polyline points="23 4 23 10 17 10"></polyline>
-                <polyline points="1 20 1 14 7 14"></polyline>
-                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
-              </svg>
+            <div class="plato-loading-bar"></div>
+            <div class="plato-loading-dots" title="일정 갱신 중">
+              <span></span>
+              <span></span>
+              <span></span>
             </div>
           </div>
         </div>
