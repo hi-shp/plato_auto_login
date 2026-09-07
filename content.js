@@ -961,7 +961,7 @@ const PlatoCalendar = {
         const chipsList = visibleActs.map(act => {
           return `
             <span class="plato-event-chip chip-${act.statusType}" title="[${act.courseName}] ${act.title}">
-              [${act.type}] ${act.title}
+              ${act.title}
             </span>
           `;
         }).join('');
