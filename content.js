@@ -468,9 +468,7 @@ const PlatoCalendar = {
 
   async fetchAndRefreshData() {
     const btn = document.querySelector('#plato-refresh-btn');
-    const txt = document.querySelector('#plato-refresh-text');
     if (btn) btn.disabled = true;
-    if (txt) txt.innerText = '새로고침 중...';
 
     // 갱신 중에는 이전 일정 표시를 모두 비우고 기본 그리드만 표시하며 로딩 오버레이 노출
     this.selectedDay = null;
@@ -493,12 +491,10 @@ const PlatoCalendar = {
         this.startCooldownTimer(this.cooldownSeconds);
       } else {
         if (btn) btn.disabled = false;
-        if (txt) txt.innerText = '새로고침';
       }
     } catch (e) {
       console.error('Failed to fetch plato calendar data:', e);
       if (btn) btn.disabled = false;
-      if (txt) txt.innerText = '새로고침 실패';
     } finally {
       this.setLoading(false);
     }

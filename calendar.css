@@ -280,10 +280,6 @@
   flex-shrink: 0;
 }
 
-.plato-refresh-btn:disabled .plato-btn-icon {
-  animation: platoSpin 0.9s linear infinite;
-}
-
 @keyframes platoSpin {
   from {
     transform: rotate(0deg);
