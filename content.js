@@ -17,6 +17,11 @@ const PlatoCalendar = {
   cleanCourseName(rawName) {
     if (!rawName) return '교과과정';
     let clean = rawName.replace(/^[0-9]+년\s+[0-9]+학기\s+교과과정\s+학부\s*/, '');
+    clean = clean.replace(/\[?교과\]?\s*[-–:]?\s*/gi, '');
+    clean = clean.replace(/\[?\d{4}[-~_]\d{1,2}학기\]?\s*[-–:]?\s*/g, '');
+    clean = clean.replace(/\d{4}년\s*\d{1,2}학기\s*/g, '');
+    clean = clean.replace(/\[(교과|학부|전공|교양)\]\s*[-–:]?\s*/gi, '');
+    clean = clean.replace(/\bNEW\b/g, '');
     // 성 이름 중복 패턴 해결 (예: "권 권용인" -> "권용인", "신 신윤호" -> "신윤호", "박 박현" -> "박현", "이 이인원" -> "이인원")
     clean = clean.replace(/([가-힣]{1,2})\s+\1([가-힣]+)/g, '$1$2');
     return clean.replace(/\s+/g, ' ').trim();
@@ -813,10 +818,13 @@ const PlatoCalendar = {
               parsedPeriod: item.parsedPeriod
             };
             uniqueMap.set(key, newAct);
-
-            const targetDayObj = days.find(d => d.day === dueD);
-            if (targetDayObj) {
-              targetDayObj.events.push(newAct);
+          } else {
+            const existing = uniqueMap.get(key);
+            existing.dueDay = dueD;
+            existing.day = dueD;
+            if (matches.length >= 2) {
+              const startD = (parseInt(matches[0][1], 10) === curMonth) ? parseInt(matches[0][2], 10) : dueD;
+              existing.startDay = startD;
             }
           }
         }
@@ -864,6 +872,11 @@ const PlatoCalendar = {
         dayDueActivitiesMap[act.dueDay] = [];
       }
       dayDueActivitiesMap[act.dueDay].push(act);
+    });
+
+    // 각 일자별 이벤트 목록을 마감일 기준 활동 목록으로 정확히 동기화
+    days.forEach(dObj => {
+      dObj.events = dayDueActivitiesMap[dObj.day] || [];
     });
 
     uniqueActivities.sort((a, b) => {
@@ -1082,7 +1095,13 @@ const BbitsCalendar = {
 
   cleanCourseName(rawName) {
     if (!rawName) return '공유대학 강좌';
-    let clean = rawName.replace(/^[0-9]+년\s+[0-9]+학기\s+교과과정\s+학부\s*/, '');
+    let clean = rawName;
+    clean = clean.replace(/\[?교과\]?\s*[-–:]?\s*/gi, '');
+    clean = clean.replace(/\[?\d{4}[-~_]\d{1,2}학기\]?\s*[-–:]?\s*/g, '');
+    clean = clean.replace(/\d{4}년\s*\d{1,2}학기\s*/g, '');
+    clean = clean.replace(/\[(교과|학부|전공|교양)\]\s*[-–:]?\s*/gi, '');
+    clean = clean.replace(/^[0-9]+년\s+[0-9]+학기\s+교과과정\s+학부\s*/, '');
+    clean = clean.replace(/\bNEW\b/g, '');
     clean = clean.replace(/([가-힣]{1,2})\s+\1([가-힣]+)/g, '$1$2');
     return clean.replace(/\s+/g, ' ').trim();
   },
@@ -1571,9 +1590,17 @@ const BbitsCalendar = {
       if (m) {
         const id = m[1];
         if (parseInt(id, 10) <= 1) return; // 사이트 기본 강좌 제외
-        let name = this.cleanCourseName(a.innerText || a.getAttribute('title') || '');
-        if (name && !coursesMap.has(id)) {
-          coursesMap.set(id, { id, name });
+        const box = a.closest('.course_box') || a.parentElement;
+        const titleEl = box ? box.querySelector('.course-title h3, h3') : a.querySelector('.course-title h3, h3');
+        const profEl = box ? box.querySelector('.prof') : a.querySelector('.prof');
+
+        let rawTitle = titleEl ? titleEl.innerText : (a.innerText || a.getAttribute('title') || '');
+        let rawProf = profEl ? profEl.innerText.trim() : '';
+
+        let cleanTitle = this.cleanCourseName(rawTitle);
+        let finalName = rawProf ? `${cleanTitle} (${rawProf})` : cleanTitle;
+        if (finalName && !coursesMap.has(id)) {
+          coursesMap.set(id, { id, name: finalName });
         }
       }
     });
@@ -1594,22 +1621,22 @@ const BbitsCalendar = {
           const cleanCText = this.cleanHtmlForParsing(cText);
           const cDoc = new DOMParser().parseFromString(cleanCText, 'text/html');
 
-          // VOD 동영상 강의 파싱
+          // VOD 동영상 강의 파싱 (아직 열리지 않은 주차의 module-ID 포함)
           cDoc.querySelectorAll('li.activity.vod').forEach(li => {
             const link = li.querySelector('a[href*="/mod/vod/view.php?id="]');
-            if (!link) return;
-            const m = link.href.match(/id=([0-9]+)/);
-            if (!m) return;
-            const modId = m[1];
+            const modIdMatch = (link && link.href.match(/id=([0-9]+)/)) || li.id?.match(/module-([0-9]+)/);
+            if (!modIdMatch) return;
+            const modId = modIdMatch[1];
+            const href = link ? link.href : `https://lms.bbits.ac.kr/mod/vod/view.php?id=${modId}`;
 
             const instanceEl = li.querySelector('.instancename');
             let name = '';
             if (instanceEl) {
               const clone = instanceEl.cloneNode(true);
               clone.querySelectorAll('.accesshide').forEach(el => el.remove());
-              name = clone.innerText.trim();
+              name = clone.innerText.replace(/동영상$/, '').trim();
             } else {
-              name = link.innerText.trim();
+              name = (link ? link.innerText : '').replace(/동영상$/, '').trim();
             }
 
             const rawPeriod = li.querySelector('.text-ubstrap')?.innerText.trim() || '';
@@ -1640,7 +1667,7 @@ const BbitsCalendar = {
             info.items[modId] = {
               modId,
               name,
-              href: link.href,
+              href,
               courseName: c.name,
               type: '강의',
               comp: 'mod_vod',
@@ -1776,104 +1803,10 @@ const BbitsCalendar = {
     const totalDays = new Date(curYear, curMonth, 0).getDate();
     const dayCells = calDoc.querySelectorAll('td.day');
 
-    const rawEvents = [];
-    const days = [];
+    const uniqueMap = new Map();
     const now = new Date();
 
-    if (dayCells.length > 0) {
-      dayCells.forEach(td => {
-        if (td.classList.contains('othermonth') || td.classList.contains('noday')) return;
-        const dayDiv = td.querySelector('.day');
-        const dayText = dayDiv ? dayDiv.innerText.replace(/[^0-9]/g, '') : '';
-        const day = dayText ? parseInt(dayText, 10) : null;
-        if (!day || day < 1 || day > totalDays) return;
-
-        const isToday = (curYear === now.getFullYear() && curMonth === (now.getMonth() + 1) && day === now.getDate());
-        const dObj = new Date(curYear, curMonth - 1, day);
-        const isWeekend = (dObj.getDay() === 0 || dObj.getDay() === 6);
-
-        const dayEvents = [];
-
-        td.querySelectorAll('ul.events-new li.calendar_event_course a, li[data-region="event-item"] a, ul.events-new li a').forEach(a => {
-          const href = a.href || '';
-          let title = a.getAttribute('title') || a.innerText || '';
-          title = title.replace(/&nbsp;/g, ' ').replace(/기한$/, '').trim();
-
-          const modIdMatch = href.match(/id=([0-9]+)/);
-          let modId = modIdMatch ? modIdMatch[1] : '';
-          if (href.includes('/calendar/view.php')) {
-            modId = '';
-          }
-
-          let statusInfo = modId ? globalStatusMap[modId] : null;
-          if (!statusInfo && title) {
-            const cleanT = title.replace(/\s+/g, '');
-            const matchedKey = Object.keys(nameStatusMap).find(k => k.endsWith(`_${cleanT}`));
-            if (matchedKey) statusInfo = nameStatusMap[matchedKey];
-          }
-
-          const isCompleted = statusInfo ? statusInfo.isCompleted : false;
-          const courseName = statusInfo ? statusInfo.courseName : '공유대학 강좌';
-          const parsedPeriod = statusInfo ? statusInfo.parsedPeriod : '';
-          const type = statusInfo ? statusInfo.type : (title.includes('과제') ? '과제' : title.includes('동영상') || title.includes('강의') ? '강의' : '활동');
-
-          const ev = {
-            day,
-            modId,
-            type,
-            title,
-            href: (statusInfo && statusInfo.href) || href,
-            isCompleted,
-            courseName,
-            parsedPeriod
-          };
-
-          dayEvents.push(ev);
-          rawEvents.push(ev);
-        });
-
-        days.push({
-          day,
-          isToday,
-          isWeekend,
-          events: dayEvents
-        });
-      });
-    }
-
-    if (days.length === 0) {
-      for (let day = 1; day <= totalDays; day++) {
-        const isToday = (curYear === now.getFullYear() && curMonth === (now.getMonth() + 1) && day === now.getDate());
-        const dObj = new Date(curYear, curMonth - 1, day);
-        const isWeekend = (dObj.getDay() === 0 || dObj.getDay() === 6);
-        days.push({ day, isToday, isWeekend, events: [] });
-      }
-    }
-
-    days.sort((a, b) => a.day - b.day);
-
-    const uniqueMap = new Map();
-    rawEvents.forEach(ev => {
-      const key = ev.modId
-        ? `${ev.courseName}_mod_${ev.modId}`
-        : `${ev.courseName}_title_${ev.title}_${ev.day}`;
-
-      if (!uniqueMap.has(key)) {
-        uniqueMap.set(key, {
-          ...ev,
-          startDay: ev.day,
-          dueDay: ev.day
-        });
-      } else {
-        const existing = uniqueMap.get(key);
-        if (ev.day < existing.startDay) existing.startDay = ev.day;
-        if (ev.day > existing.dueDay) existing.dueDay = ev.day;
-        if (ev.isCompleted !== undefined && !ev.isCompleted) existing.isCompleted = false;
-        if (ev.parsedPeriod && !existing.parsedPeriod) existing.parsedPeriod = ev.parsedPeriod;
-      }
-    });
-
-    // 강좌 활동 현황(VOD, 과제) 중 해당 월에 마감인 항목 캘린더에 완벽 반영
+    // 1. 강좌 활동 현황(VOD 강의, 과제) 중 해당 월에 마감인 항목을 마감일(dueDay) 기준으로 우선 등록
     if (globalStatusMap) {
       Object.values(globalStatusMap).forEach(item => {
         let itemDueYear = item.dueYear || curYear;
@@ -1896,7 +1829,7 @@ const BbitsCalendar = {
         if (itemDueYear === curYear && itemDueMonth === curMonth && itemDueDay >= 1 && itemDueDay <= totalDays) {
           const key = `${item.courseName}_mod_${item.modId}`;
           if (!uniqueMap.has(key)) {
-            const newAct = {
+            uniqueMap.set(key, {
               day: itemDueDay,
               startDay: itemStartDay || itemDueDay,
               dueDay: itemDueDay,
@@ -1907,23 +1840,86 @@ const BbitsCalendar = {
               isCompleted: item.isCompleted,
               courseName: item.courseName,
               parsedPeriod: item.parsedPeriod
-            };
-            uniqueMap.set(key, newAct);
-
-            const targetDayObj = days.find(d => d.day === itemDueDay);
-            if (targetDayObj) {
-              targetDayObj.events.push(newAct);
-            }
-          } else {
-            const existing = uniqueMap.get(key);
-            existing.dueDay = itemDueDay;
-            if (itemStartDay) existing.startDay = itemStartDay;
-            existing.isCompleted = item.isCompleted;
-            if (item.parsedPeriod) existing.parsedPeriod = item.parsedPeriod;
+            });
           }
         }
       });
     }
+
+    const days = [];
+
+    // 2. Moodle 캘린더 문서(calDoc) 파싱: 일반 학사 일정 보충 및 시작일 알림 필터링
+    if (dayCells.length > 0) {
+      dayCells.forEach(td => {
+        if (td.classList.contains('othermonth') || td.classList.contains('noday')) return;
+        const dayDiv = td.querySelector('.day');
+        const dayText = dayDiv ? dayDiv.innerText.replace(/[^0-9]/g, '') : '';
+        const day = dayText ? parseInt(dayText, 10) : null;
+        if (!day || day < 1 || day > totalDays) return;
+
+        const isToday = (curYear === now.getFullYear() && curMonth === (now.getMonth() + 1) && day === now.getDate());
+        const dObj = new Date(curYear, curMonth - 1, day);
+        const isWeekend = (dObj.getDay() === 0 || dObj.getDay() === 6);
+
+        td.querySelectorAll('ul.events-new li.calendar_event_course a, li[data-region="event-item"] a, ul.events-new li a').forEach(a => {
+          const href = a.href || '';
+          let title = a.getAttribute('title') || a.innerText || '';
+          title = title.replace(/&nbsp;/g, ' ').replace(/기한$/, '').trim();
+
+          // 시작일 알림("N주차 N차시 강의 동영상", "강의 열람", "강의 개시") 필터링 (마감일에만 표시)
+          if (/주차.*강의.*동영상|강의\s*열람|강의\s*개시/.test(title)) return;
+
+          // 이미 globalStatusMap 또는 nameStatusMap에 존재하는 활동은 마감일에 이미 등록되어 있으므로 시작일 제외
+          const cleanT = title.replace(/\s+/g, '');
+          const matchedKey = Object.keys(nameStatusMap).find(k => k.endsWith(`_${cleanT}`));
+          if (matchedKey) return;
+
+          const modIdMatch = href.match(/id=([0-9]+)/);
+          const modId = (!href.includes('/calendar/view.php') && modIdMatch) ? modIdMatch[1] : '';
+          if (modId && globalStatusMap[modId]) return;
+
+          // 강의나 과제 성격의 강좌 이벤트는 시작일 날짜 셀에 등록하지 않음
+          if (title.includes('강의') || title.includes('동영상') || title.includes('과제') || title.includes('차시')) {
+            return;
+          }
+
+          // 일반 학사/공지 일정만 해당 일자에 등록
+          const key = `cal_event_${day}_${cleanT}`;
+          if (!uniqueMap.has(key)) {
+            uniqueMap.set(key, {
+              day,
+              startDay: day,
+              dueDay: day,
+              modId: '',
+              type: '활동',
+              title,
+              href,
+              isCompleted: false,
+              courseName: '공유대학',
+              parsedPeriod: `${curMonth}월 ${day}일`
+            });
+          }
+        });
+
+        days.push({
+          day,
+          isToday,
+          isWeekend,
+          events: []
+        });
+      });
+    }
+
+    if (days.length === 0) {
+      for (let day = 1; day <= totalDays; day++) {
+        const isToday = (curYear === now.getFullYear() && curMonth === (now.getMonth() + 1) && day === now.getDate());
+        const dObj = new Date(curYear, curMonth - 1, day);
+        const isWeekend = (dObj.getDay() === 0 || dObj.getDay() === 6);
+        days.push({ day, isToday, isWeekend, events: [] });
+      }
+    }
+
+    days.sort((a, b) => a.day - b.day);
 
     const uniqueActivities = Array.from(uniqueMap.values());
     const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
@@ -1964,6 +1960,11 @@ const BbitsCalendar = {
         dayDueActivitiesMap[act.dueDay] = [];
       }
       dayDueActivitiesMap[act.dueDay].push(act);
+    });
+
+    // 각 일자별 이벤트 목록을 마감일 기준 활동 목록으로 할당 (시작일 표시 원천 제거)
+    days.forEach(dObj => {
+      dObj.events = dayDueActivitiesMap[dObj.day] || [];
     });
 
     uniqueActivities.sort((a, b) => {
