@@ -939,6 +939,11 @@ const PlatoCalendar = {
       if (isToday) cell.classList.add('today');
       if (this.selectedDay === d.day) cell.classList.add('selected');
 
+      const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+      const cellMidnight = new Date(curYear, curMonth - 1, d.day).getTime();
+      const isPast = cellMidnight < todayMidnight;
+      if (isPast) cell.classList.add('is-past');
+
       const dayOfWeek = new Date(curYear, curMonth - 1, d.day).getDay();
       if (dayOfWeek === 0) cell.classList.add('weekend-sun');
       if (dayOfWeek === 6) cell.classList.add('weekend-sat');
@@ -948,24 +953,32 @@ const PlatoCalendar = {
       const doneCount = dueActs.filter(a => a.statusType === 'done').length;
       const passedCount = dueActs.filter(a => a.statusType === 'passed').length;
 
-      // 상태별 셀 하이라이트
-      if (pendingCount > 0) {
-        cell.classList.add('has-pending');
-      } else if (doneCount > 0 && passedCount === 0) {
-        cell.classList.add('all-done');
+      // 상태별 셀 하이라이트 (지난 날짜는 무조건 회색 처리하므로 액센트 바 제외)
+      if (!isPast) {
+        if (pendingCount > 0) {
+          cell.classList.add('has-pending');
+        } else if (doneCount > 0 && passedCount === 0) {
+          cell.classList.add('all-done');
+        }
       }
 
-      // 상단 행: 일자 숫자 + 직관적인 큰 색상 뱃지
+      // 상단 행: 일자 숫자 + 직관적인 큰 색상 뱃지 (지난 날짜는 무조건 회색 뱃지)
       let countBadgeHtml = '';
-      if (pendingCount > 0) {
-        countBadgeHtml = `<span class="plato-day-badge badge-pending">${pendingCount}</span>`;
-      } else if (doneCount > 0) {
-        countBadgeHtml = `<span class="plato-day-badge badge-done"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;"><polyline points="20 6 9 17 4 12"></polyline></svg></span>`;
-      } else if (passedCount > 0) {
-        countBadgeHtml = `<span class="plato-day-badge badge-passed">${passedCount}</span>`;
+      if (isPast) {
+        if (dueActs.length > 0) {
+          countBadgeHtml = `<span class="plato-day-badge badge-passed">${dueActs.length}</span>`;
+        }
+      } else {
+        if (pendingCount > 0) {
+          countBadgeHtml = `<span class="plato-day-badge badge-pending">${pendingCount}</span>`;
+        } else if (doneCount > 0) {
+          countBadgeHtml = `<span class="plato-day-badge badge-done"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;"><polyline points="20 6 9 17 4 12"></polyline></svg></span>`;
+        } else if (passedCount > 0) {
+          countBadgeHtml = `<span class="plato-day-badge badge-passed">${passedCount}</span>`;
+        }
       }
 
-      // 셀 내부 칩들
+      // 셀 내부 칩들 (지난 날짜는 했든 안했든 무조건 회색 칩)
       let chipsHtml = '';
       if (dueActs.length > 0) {
         const maxDisplay = 2;
@@ -973,8 +986,9 @@ const PlatoCalendar = {
         const remainCount = dueActs.length - maxDisplay;
 
         const chipsList = visibleActs.map(act => {
+          const chipClass = isPast ? 'chip-passed' : `chip-${act.statusType}`;
           return `
-            <span class="plato-event-chip chip-${act.statusType}" title="[${act.courseName}] ${act.title}">
+            <span class="plato-event-chip ${chipClass}" title="[${act.courseName}] ${act.title}">
               ${act.title}
             </span>
           `;
@@ -1058,13 +1072,20 @@ const PlatoCalendar = {
       return;
     }
 
+    const now = new Date();
+    const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const selectedMidnight = new Date(curYear, curMonth - 1, this.selectedDay).getTime();
+    const isPastSelected = selectedMidnight < todayMidnight;
+
     // 카드 렌더링: 두꺼운 상태 바(좌측 6px), 큰 상태 뱃지, 기간(몇월몇일 ~ 몇월몇일)
     grid.innerHTML = items.map(item => {
+      const cardClass = isPastSelected ? 'card-passed' : `card-${item.statusType}`;
+      const badgeClass = isPastSelected ? 'badge-passed' : `badge-${item.statusType}`;
       return `
-        <a href="${item.href}" class="plato-task-card card-${item.statusType}" target="_blank" rel="noopener noreferrer">
+        <a href="${item.href}" class="plato-task-card ${cardClass}" target="_blank" rel="noopener noreferrer">
           <div class="plato-task-card-header">
             <span class="plato-task-course">[${item.type}] ${item.courseName}</span>
-            <span class="plato-task-status-badge badge-${item.statusType}">${item.statusLabel}</span>
+            <span class="plato-task-status-badge ${badgeClass}">${item.statusLabel}</span>
           </div>
           <span class="plato-task-name" title="${item.title}">${item.title}</span>
           <div class="plato-task-meta">
@@ -2026,6 +2047,11 @@ const BbitsCalendar = {
       if (isToday) cell.classList.add('today');
       if (this.selectedDay === d.day) cell.classList.add('selected');
 
+      const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+      const cellMidnight = new Date(curYear, curMonth - 1, d.day).getTime();
+      const isPast = cellMidnight < todayMidnight;
+      if (isPast) cell.classList.add('is-past');
+
       const dayOfWeek = new Date(curYear, curMonth - 1, d.day).getDay();
       if (dayOfWeek === 0) cell.classList.add('weekend-sun');
       if (dayOfWeek === 6) cell.classList.add('weekend-sat');
@@ -2035,21 +2061,32 @@ const BbitsCalendar = {
       const doneCount = dueActs.filter(a => a.statusType === 'done').length;
       const passedCount = dueActs.filter(a => a.statusType === 'passed').length;
 
-      if (pendingCount > 0) {
-        cell.classList.add('has-pending');
-      } else if (doneCount > 0 && passedCount === 0) {
-        cell.classList.add('all-done');
+      // 상태별 셀 하이라이트 (지난 날짜는 무조건 회색 처리하므로 액센트 바 제외)
+      if (!isPast) {
+        if (pendingCount > 0) {
+          cell.classList.add('has-pending');
+        } else if (doneCount > 0 && passedCount === 0) {
+          cell.classList.add('all-done');
+        }
       }
 
+      // 상단 행: 일자 숫자 + 직관적인 큰 색상 뱃지 (지난 날짜는 무조건 회색 뱃지)
       let countBadgeHtml = '';
-      if (pendingCount > 0) {
-        countBadgeHtml = `<span class="plato-day-badge badge-pending">${pendingCount}</span>`;
-      } else if (doneCount > 0) {
-        countBadgeHtml = `<span class="plato-day-badge badge-done"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;"><polyline points="20 6 9 17 4 12"></polyline></svg></span>`;
-      } else if (passedCount > 0) {
-        countBadgeHtml = `<span class="plato-day-badge badge-passed">${passedCount}</span>`;
+      if (isPast) {
+        if (dueActs.length > 0) {
+          countBadgeHtml = `<span class="plato-day-badge badge-passed">${dueActs.length}</span>`;
+        }
+      } else {
+        if (pendingCount > 0) {
+          countBadgeHtml = `<span class="plato-day-badge badge-pending">${pendingCount}</span>`;
+        } else if (doneCount > 0) {
+          countBadgeHtml = `<span class="plato-day-badge badge-done"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;"><polyline points="20 6 9 17 4 12"></polyline></svg></span>`;
+        } else if (passedCount > 0) {
+          countBadgeHtml = `<span class="plato-day-badge badge-passed">${passedCount}</span>`;
+        }
       }
 
+      // 셀 내부 칩들 (지난 날짜는 했든 안했든 무조건 회색 칩)
       let chipsHtml = '';
       if (dueActs.length > 0) {
         const maxDisplay = 2;
@@ -2057,8 +2094,9 @@ const BbitsCalendar = {
         const remainCount = dueActs.length - maxDisplay;
 
         const chipsList = visibleActs.map(act => {
+          const chipClass = isPast ? 'chip-passed' : `chip-${act.statusType}`;
           return `
-            <span class="plato-event-chip chip-${act.statusType}" title="[${act.courseName}] ${act.title}">
+            <span class="plato-event-chip ${chipClass}" title="[${act.courseName}] ${act.title}">
               ${act.title}
             </span>
           `;
@@ -2140,12 +2178,19 @@ const BbitsCalendar = {
       return;
     }
 
+    const now = new Date();
+    const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const selectedMidnight = new Date(curYear, curMonth - 1, this.selectedDay).getTime();
+    const isPastSelected = selectedMidnight < todayMidnight;
+
     grid.innerHTML = items.map(item => {
+      const cardClass = isPastSelected ? 'card-passed' : `card-${item.statusType}`;
+      const badgeClass = isPastSelected ? 'badge-passed' : `badge-${item.statusType}`;
       return `
-        <a href="${item.href}" class="plato-task-card card-${item.statusType}" target="_blank" rel="noopener noreferrer">
+        <a href="${item.href}" class="plato-task-card ${cardClass}" target="_blank" rel="noopener noreferrer">
           <div class="plato-task-card-header">
             <span class="plato-task-course">[${item.type}] ${item.courseName}</span>
-            <span class="plato-task-status-badge badge-${item.statusType}">${item.statusLabel}</span>
+            <span class="plato-task-status-badge ${badgeClass}">${item.statusLabel}</span>
           </div>
           <span class="plato-task-name" title="${item.title}">${item.title}</span>
           <div class="plato-task-meta">

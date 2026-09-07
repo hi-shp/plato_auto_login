@@ -424,6 +424,34 @@
   border: 1.5px solid #0284c7 !important;
 }
 
+/* 지난 날짜: 했든 안했든 무조건 회색 톤으로 통일 */
+.plato-large-day-cell.is-past {
+  background: #f8fafc;
+  border-color: #e2e8f0;
+  border-top: 1px solid #e2e8f0 !important;
+}
+
+.plato-large-day-cell.is-past:hover:not(.selected) {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+}
+
+.plato-large-day-cell.is-past .plato-day-num {
+  color: #94a3b8 !important;
+}
+
+.plato-large-day-cell.is-past .plato-day-badge {
+  background: #94a3b8 !important;
+  color: #ffffff !important;
+  box-shadow: none !important;
+}
+
+.plato-large-day-cell.is-past .plato-event-chip {
+  background: #f1f5f9 !important;
+  color: #64748b !important;
+  border-left: 3.5px solid #94a3b8 !important;
+}
+
 /* Day Cell Top Row: Date Number + Clean Bold Numeric Badge */
 .plato-day-top-row {
   display: flex;
