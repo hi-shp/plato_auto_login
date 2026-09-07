@@ -253,16 +253,14 @@
 .plato-cal-loading-content {
   display: inline-flex;
   align-items: center;
-  gap: 12px;
+  justify-content: center;
+  width: 50px;
+  height: 50px;
   background: #ffffff;
-  padding: 12px 24px;
-  border-radius: 30px;
-  border: 1.5px solid #cbd5e1;
+  border-radius: 50%;
+  border: 1.5px solid #e2e8f0;
   box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
-  color: #0f172a;
-  font-size: 14px;
-  font-weight: 700;
-  letter-spacing: -0.3px;
+  color: #0284c7;
   user-select: none;
 }
 
@@ -270,14 +268,12 @@
   animation: platoBadgePop 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
-.plato-loading-spinner {
-  width: 18px;
-  height: 18px;
-  border: 2.5px solid #e2e8f0;
-  border-top-color: #0284c7;
-  border-radius: 50%;
-  animation: platoSpin 0.7s linear infinite;
-  flex-shrink: 0;
+.plato-loading-refresh-icon {
+  width: 24px;
+  height: 24px;
+  color: #0284c7;
+  animation: platoSpin 0.75s linear infinite;
+  display: block;
 }
 
 @keyframes platoSpin {

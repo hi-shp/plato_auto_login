@@ -209,11 +209,14 @@ const PlatoCalendar = {
             <!-- 일자 셀들이 여기에 렌더링됨 -->
           </div>
 
-          <!-- 갱신/동기화 중 상태를 명확히 보여주는 오버레이 인디케이터 -->
+          <!-- 갱신/동기화 중 상태 오버레이 (텍스트 없이 아이콘만 표시) -->
           <div class="plato-cal-loading-overlay" id="plato-cal-loading-overlay">
-            <div class="plato-cal-loading-content">
-              <div class="plato-loading-spinner"></div>
-              <span id="plato-loading-text">새로고침 중...</span>
+            <div class="plato-cal-loading-content" title="새로고침 중">
+              <svg class="plato-loading-refresh-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="23 4 23 10 17 10"></polyline>
+                <polyline points="1 20 1 14 7 14"></polyline>
+                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+              </svg>
             </div>
           </div>
         </div>
@@ -290,13 +293,10 @@ const PlatoCalendar = {
     chrome.storage.local.set({ platoCalendarCollapsed: collapsed });
   },
 
-  setLoading(isLoading, text = '새로고침 중...') {
+  setLoading(isLoading) {
     const overlay = document.querySelector('#plato-cal-loading-overlay');
-    const loadingText = document.querySelector('#plato-loading-text');
     if (!overlay) return;
-
     if (isLoading) {
-      if (loadingText) loadingText.innerText = text;
       overlay.classList.add('active');
     } else {
       overlay.classList.remove('active');
@@ -345,7 +345,7 @@ const PlatoCalendar = {
 
     // 캐시가 아직 없으면 해당 월의 기본 날짜 그리드를 즉시 렌더링하고 로딩 오버레이 표시
     this.renderEmptyMonthGrid(year, month);
-    this.setLoading(true, `${month}월 일정 불러오는 중...`);
+    this.setLoading(true);
 
     const reqId = ++this.navRequestId;
 
@@ -450,7 +450,7 @@ const PlatoCalendar = {
     // 갱신 중에는 이전 일정 표시를 모두 비우고 기본 그리드만 표시하며 로딩 오버레이 노출
     this.selectedDay = null;
     this.renderEmptyMonthGrid(this.viewYear, this.viewMonth);
-    this.setLoading(true, '새로고침 중...');
+    this.setLoading(true);
 
     try {
       // 병렬 최적화: 강좌별 활동 현황 조회와 월간 캘린더 조회를 동시에 실행(Promise.all)
