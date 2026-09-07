@@ -400,23 +400,21 @@ const PlatoCalendar = {
       this.viewYear = today.getFullYear();
       this.viewMonth = today.getMonth() + 1;
 
-      const hasValidData = (this.monthCache[currentMonthKey] && this.monthCache[currentMonthKey].activities && this.monthCache[currentMonthKey].activities.length > 0) ||
-                           (res.plato_calendar_data && res.plato_calendar_data.activities && res.plato_calendar_data.activities.length > 0);
-
-      const needForceRefresh = sessionStorage.getItem('plato_need_calendar_refresh') === '1' || !hasValidData;
-
-      if (needForceRefresh) {
-        sessionStorage.removeItem('plato_need_calendar_refresh');
-        this.renderEmptyMonthGrid(this.viewYear, this.viewMonth);
-        this.fetchAndRefreshData();
-      } else {
-        if (this.monthCache[currentMonthKey]) {
-          this.cachedData = this.monthCache[currentMonthKey];
-        } else if (res.plato_calendar_data) {
-          this.cachedData = res.plato_calendar_data;
-        }
+      // 1. 마지막 기록(캐시)이 있으면 즉시 그대로 렌더링하여 하얀 빈 화면 방지
+      if (this.monthCache[currentMonthKey]) {
+        this.cachedData = this.monthCache[currentMonthKey];
         this.render();
+      } else if (res.plato_calendar_data) {
+        this.cachedData = res.plato_calendar_data;
+        this.render();
+      } else {
+        // 캐시 데이터가 전혀 없는 최초 접속 시에만 기본 빈 그리드 표시
+        this.renderEmptyMonthGrid(this.viewYear, this.viewMonth);
       }
+
+      // 2. 교과과정 페이지 접속 시 항상 자동으로 1회 새로고침 수행하여 최신 일정 동기화
+      sessionStorage.removeItem('plato_need_calendar_refresh');
+      this.fetchAndRefreshData();
     });
   },
 
@@ -446,9 +444,15 @@ const PlatoCalendar = {
     const btn = document.querySelector('#plato-refresh-btn');
     if (btn) btn.disabled = true;
 
-    // 갱신 중에는 이전 일정 표시를 모두 비우고 기본 그리드만 표시하며 로딩 오버레이 노출
-    this.selectedDay = null;
-    this.renderEmptyMonthGrid(this.viewYear, this.viewMonth);
+    // 기존 캐시나 렌더링 데이터가 있다면 화면을 하얗게 비우지 않고 그대로 유지
+    // 데이터가 전혀 없을 때만 빈 기본 그리드를 렌더링
+    const currentMonthKey = `${this.viewYear}_${this.viewMonth}`;
+    if (this.monthCache[currentMonthKey]) {
+      this.cachedData = this.monthCache[currentMonthKey];
+    } else if (!this.cachedData || !this.cachedData.days || this.cachedData.curMonth !== this.viewMonth || this.cachedData.curYear !== this.viewYear) {
+      this.renderEmptyMonthGrid(this.viewYear, this.viewMonth);
+    }
+
     this.setLoading(true);
 
     try {
