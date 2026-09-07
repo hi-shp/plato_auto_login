@@ -377,31 +377,29 @@ const PlatoCalendar = {
 
       const today = new Date();
       const currentMonthKey = `${today.getFullYear()}_${today.getMonth() + 1}`;
+      this.viewYear = today.getFullYear();
+      this.viewMonth = today.getMonth() + 1;
 
       const hasValidData = (this.monthCache[currentMonthKey] && this.monthCache[currentMonthKey].activities && this.monthCache[currentMonthKey].activities.length > 0) ||
                            (res.plato_calendar_data && res.plato_calendar_data.activities && res.plato_calendar_data.activities.length > 0);
 
-      if (this.monthCache[currentMonthKey]) {
-        this.cachedData = this.monthCache[currentMonthKey];
-        this.viewYear = today.getFullYear();
-        this.viewMonth = today.getMonth() + 1;
-        this.render();
-      } else if (res.plato_calendar_data) {
-        this.cachedData = res.plato_calendar_data;
-        this.viewYear = res.plato_calendar_data.curYear || today.getFullYear();
-        this.viewMonth = res.plato_calendar_data.curMonth || (today.getMonth() + 1);
-        this.monthCache[`${this.viewYear}_${this.viewMonth}`] = res.plato_calendar_data;
-        this.render();
-      }
+      // 재로그인 직후이거나, 유효한 데이터가 없거나, 쿨다운(5초)이 경과한 경우(컴퓨터 재부팅, 새로운 세션 포함) 갱신
+      const needForceRefresh = sessionStorage.getItem('plato_need_calendar_refresh') === '1' || !hasValidData || elapsed >= this.cooldownSeconds * 1000;
 
-      const needForceRefresh = sessionStorage.getItem('plato_need_calendar_refresh') === '1' || !hasValidData;
       if (needForceRefresh) {
         sessionStorage.removeItem('plato_need_calendar_refresh');
+        // 갱신 중일 때는 이전 일정이 남아있지 않도록 달력 일정을 깨끗이 비우고 기본 그리드만 표시
+        this.renderEmptyMonthGrid(this.viewYear, this.viewMonth);
         this.fetchAndRefreshData();
-      } else if (elapsed < this.cooldownSeconds * 1000) {
-        this.startCooldownTimer(Math.ceil((this.cooldownSeconds * 1000 - elapsed) / 1000));
       } else {
-        this.fetchAndRefreshData();
+        // 쿨다운 이내(5초 미만)의 최신 캐시가 있는 경우에만 기존 데이터 즉시 표시
+        if (this.monthCache[currentMonthKey]) {
+          this.cachedData = this.monthCache[currentMonthKey];
+        } else if (res.plato_calendar_data) {
+          this.cachedData = res.plato_calendar_data;
+        }
+        this.render();
+        this.startCooldownTimer(Math.ceil((this.cooldownSeconds * 1000 - elapsed) / 1000));
       }
     });
   },
@@ -447,6 +445,10 @@ const PlatoCalendar = {
     const txt = document.querySelector('#plato-refresh-text');
     if (btn) btn.disabled = true;
     if (txt) txt.innerText = '갱신 중...';
+
+    // 갱신 중에는 이전 일정 표시를 모두 비우고 기본 그리드만 표시
+    this.selectedDay = null;
+    this.renderEmptyMonthGrid(this.viewYear, this.viewMonth);
 
     try {
       await this.fetchCourseStatuses();
