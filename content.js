@@ -6,6 +6,13 @@ const PlatoCalendar = {
   timerId: null,
   selectedDay: null,
   cachedData: null,
+  viewYear: new Date().getFullYear(),
+  viewMonth: new Date().getMonth() + 1,
+  monthCache: {},
+  cachedStatusMap: null,
+  cachedNameStatusMap: null,
+  cachedCourses: null,
+  navRequestId: 0,
 
   WEEKDAYS_KO: ['일', '월', '화', '수', '목', '금', '토'],
 
@@ -177,8 +184,25 @@ const PlatoCalendar = {
       <!-- 2. 접히는 전체 영역 (월별 헤더, 그리드, 상세 패널) -->
       <div class="plato-cal-collapsible-body" id="plato-cal-collapsible-body">
         <div class="plato-cal-month-header">
-          <span class="plato-cal-year" id="plato-cal-year-text">${defaultYear}년</span>
-          <h2 class="plato-cal-month" id="plato-cal-month-text">${defaultMonth}월</h2>
+          <div class="plato-cal-month-nav-container">
+            <button type="button" class="plato-cal-month-nav-btn prev" id="plato-cal-prev-btn" title="이전 달">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="15 18 9 12 15 6"></polyline>
+              </svg>
+            </button>
+            <div class="plato-cal-month-title-wrap">
+              <span class="plato-cal-year" id="plato-cal-year-text">${defaultYear}년</span>
+              <div class="plato-cal-month-row">
+                <h2 class="plato-cal-month" id="plato-cal-month-text">${defaultMonth}월</h2>
+                <button type="button" class="plato-cal-today-badge" id="plato-cal-today-btn" title="오늘(이번 달)로 이동" style="display: none;">오늘</button>
+              </div>
+            </div>
+            <button type="button" class="plato-cal-month-nav-btn next" id="plato-cal-next-btn" title="다음 달">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="9 18 15 12 9 6"></polyline>
+              </svg>
+            </button>
+          </div>
         </div>
 
         <!-- 고정 7열 대형 월간 캘린더 그리드 -->
@@ -208,6 +232,22 @@ const PlatoCalendar = {
     document.querySelector('#plato-refresh-btn')?.addEventListener('click', (e) => {
       e.stopPropagation();
       this.handleManualRefresh();
+    });
+
+    // 월 이동 네비게이션 이벤트
+    document.querySelector('#plato-cal-prev-btn')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.prevMonth();
+    });
+
+    document.querySelector('#plato-cal-next-btn')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.nextMonth();
+    });
+
+    document.querySelector('#plato-cal-today-btn')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.goToToday();
     });
 
     // 상세 패널 닫기
@@ -252,23 +292,129 @@ const PlatoCalendar = {
     chrome.storage.local.set({ platoCalendarCollapsed: collapsed });
   },
 
+  async prevMonth() {
+    let y = this.viewYear;
+    let m = this.viewMonth - 1;
+    if (m < 1) {
+      m = 12;
+      y--;
+    }
+    await this.navigateToMonth(y, m);
+  },
+
+  async nextMonth() {
+    let y = this.viewYear;
+    let m = this.viewMonth + 1;
+    if (m > 12) {
+      m = 1;
+      y++;
+    }
+    await this.navigateToMonth(y, m);
+  },
+
+  async goToToday() {
+    const now = new Date();
+    await this.navigateToMonth(now.getFullYear(), now.getMonth() + 1);
+  },
+
+  async navigateToMonth(year, month) {
+    this.viewYear = year;
+    this.viewMonth = month;
+    this.selectedDay = null;
+
+    const today = new Date();
+    const isCurrentMonth = (year === today.getFullYear() && month === (today.getMonth() + 1));
+
+    const yearEl = document.querySelector('#plato-cal-year-text');
+    if (yearEl) yearEl.innerText = `${year}년`;
+
+    const monthEl = document.querySelector('#plato-cal-month-text');
+    if (monthEl) monthEl.innerText = `${month}월`;
+
+    const todayBtn = document.querySelector('#plato-cal-today-btn');
+    if (todayBtn) {
+      todayBtn.style.display = isCurrentMonth ? 'none' : 'inline-block';
+    }
+
+    this.renderDetailPanel();
+
+    const cacheKey = `${year}_${month}`;
+    if (this.monthCache[cacheKey]) {
+      this.cachedData = this.monthCache[cacheKey];
+      this.render();
+      return;
+    }
+
+    // 캐시가 아직 없으면 해당 월의 기본 날짜 그리드를 즉시 렌더링하여 화면 깜빡임/지연 방지
+    this.renderEmptyMonthGrid(year, month);
+
+    const reqId = ++this.navRequestId;
+
+    try {
+      const data = await this.fetchMonthCalendar(year, month);
+      if (reqId === this.navRequestId && data) {
+        this.cachedData = data;
+        this.monthCache[cacheKey] = data;
+        this.render();
+        chrome.storage.local.set({
+          plato_calendar_months: this.monthCache
+        });
+      }
+    } catch (err) {
+      console.error('Failed to load month calendar:', err);
+    }
+  },
+
+  renderEmptyMonthGrid(year, month) {
+    const totalDays = new Date(year, month, 0).getDate();
+    const days = [];
+    const now = new Date();
+    for (let day = 1; day <= totalDays; day++) {
+      const isToday = (year === now.getFullYear() && month === (now.getMonth() + 1) && day === now.getDate());
+      const d = new Date(year, month - 1, day);
+      const isWeekend = (d.getDay() === 0 || d.getDay() === 6);
+      days.push({ day, isToday, isWeekend, events: [] });
+    }
+    this.cachedData = {
+      curYear: year,
+      curMonth: month,
+      days,
+      activities: [],
+      dayDueActivitiesMap: {}
+    };
+    this.render();
+  },
+
   loadCachedData() {
-    chrome.storage.local.get(['plato_calendar_data', 'plato_calendar_last_fetch'], (res) => {
+    chrome.storage.local.get(['plato_calendar_data', 'plato_calendar_months', 'plato_calendar_last_fetch'], (res) => {
       if (chrome.runtime.lastError) return;
       const now = Date.now();
       const lastFetch = res.plato_calendar_last_fetch || 0;
       const elapsed = now - lastFetch;
 
-      const hasValidData = res.plato_calendar_data &&
-                           res.plato_calendar_data.activities &&
-                           res.plato_calendar_data.activities.length > 0;
+      if (res.plato_calendar_months) {
+        this.monthCache = res.plato_calendar_months;
+      }
 
-      if (hasValidData) {
+      const today = new Date();
+      const currentMonthKey = `${today.getFullYear()}_${today.getMonth() + 1}`;
+
+      const hasValidData = (this.monthCache[currentMonthKey] && this.monthCache[currentMonthKey].activities && this.monthCache[currentMonthKey].activities.length > 0) ||
+                           (res.plato_calendar_data && res.plato_calendar_data.activities && res.plato_calendar_data.activities.length > 0);
+
+      if (this.monthCache[currentMonthKey]) {
+        this.cachedData = this.monthCache[currentMonthKey];
+        this.viewYear = today.getFullYear();
+        this.viewMonth = today.getMonth() + 1;
+        this.render();
+      } else if (res.plato_calendar_data) {
         this.cachedData = res.plato_calendar_data;
+        this.viewYear = res.plato_calendar_data.curYear || today.getFullYear();
+        this.viewMonth = res.plato_calendar_data.curMonth || (today.getMonth() + 1);
+        this.monthCache[`${this.viewYear}_${this.viewMonth}`] = res.plato_calendar_data;
         this.render();
       }
 
-      // 재로그인 직후이거나, 유효한 데이터가 없거나, 쿨다운(5초)이 경과한 경우 즉시 새로고침
       const needForceRefresh = sessionStorage.getItem('plato_need_calendar_refresh') === '1' || !hasValidData;
       if (needForceRefresh) {
         sessionStorage.removeItem('plato_need_calendar_refresh');
@@ -324,23 +470,19 @@ const PlatoCalendar = {
     if (txt) txt.innerText = '갱신 중...';
 
     try {
-      const data = await this.scrapeAllData();
-      // 유효한 데이터(날짜나 과제가 정상 존재하는 캘린더)인 경우에만 캐시 갱신
-      if (data && data.activities && data.activities.length > 0) {
+      await this.fetchCourseStatuses();
+      const data = await this.fetchMonthCalendar(this.viewYear, this.viewMonth, true);
+      if (data && data.activities) {
         this.cachedData = data;
+        this.monthCache[`${this.viewYear}_${this.viewMonth}`] = data;
         const now = Date.now();
         chrome.storage.local.set({
           plato_calendar_data: data,
+          plato_calendar_months: this.monthCache,
           plato_calendar_last_fetch: now
         });
         this.render();
         this.startCooldownTimer(this.cooldownSeconds);
-      } else if (this.cachedData) {
-        // 스크랩 데이터가 비어있고 이전 정상 캐시가 있다면 이전 캐시 유지
-        console.warn('Plato Calendar: Scraped activities empty, keeping existing cache');
-        this.render();
-        if (btn) btn.disabled = false;
-        if (txt) txt.innerText = '새로고침';
       } else {
         if (btn) btn.disabled = false;
         if (txt) txt.innerText = '새로고침';
@@ -352,36 +494,7 @@ const PlatoCalendar = {
     }
   },
 
-  async scrapeAllData() {
-    // 1. Moodle 월별 캘린더 View Fetch
-    const calResp = await fetch('https://plato.pusan.ac.kr/calendar/view.php?view=month', { credentials: 'same-origin' });
-    const calText = await calResp.text();
-
-    // 세션 만료 상태 감지 시 기존 정상 캐시 보존을 위해 즉시 중단
-    if (calResp.redirected && calResp.url.includes('/login/')) {
-      throw new Error('Session expired: redirected to login');
-    }
-    if ((calText.includes('id="form-login-sso"') || calText.includes('name="username"')) && calText.includes('name="password"')) {
-      throw new Error('Session expired: login form detected');
-    }
-
-    const calDoc = new DOMParser().parseFromString(calText, 'text/html');
-    const dayCells = calDoc.querySelectorAll('td.day');
-    if (dayCells.length === 0) {
-      throw new Error('Calendar days not found in response');
-    }
-
-    const monthTitle = calDoc.querySelector('h2.current, h2')?.innerText?.trim() || '이번 달 일정';
-    let curYear = new Date().getFullYear();
-    let curMonth = new Date().getMonth() + 1;
-
-    const yMatch = monthTitle.match(/([0-9]{4})\s*년?/);
-    if (yMatch) curYear = parseInt(yMatch[1], 10);
-
-    const mMatch = monthTitle.match(/([0-9]{1,2})\s*월/);
-    if (mMatch) curMonth = parseInt(mMatch[1], 10);
-
-    // 2. 교과과정 페이지 DOM에서 수강 강좌 ID 및 이름 추출 (부족할 경우 정규 교과과정 페이지 fetch 보완)
+  async fetchCourseStatuses() {
     let courseLinks = document.querySelectorAll('a[href*="/course/view.php?id="]');
     if (courseLinks.length === 0) {
       try {
@@ -408,8 +521,8 @@ const PlatoCalendar = {
       }
     });
     const courses = Array.from(coursesMap.values());
+    this.cachedCourses = courses;
 
-    // 3. 각 강좌별 활동 현황 및 과제 현황 병렬 Fetch
     const statusResults = await Promise.all(courses.map(async (c) => {
       const info = { courseId: c.id, courseName: c.name, items: {} };
       try {
@@ -447,6 +560,7 @@ const PlatoCalendar = {
                 info.items[modId] = {
                   modId,
                   name,
+                  href: link.href,
                   courseName: c.name,
                   isCompleted,
                   completedAt,
@@ -478,6 +592,7 @@ const PlatoCalendar = {
                   info.items[modId] = {
                     modId,
                     name: link.innerText.trim(),
+                    href: link.href,
                     courseName: c.name,
                     isCompleted,
                     parsedPeriod
@@ -510,82 +625,124 @@ const PlatoCalendar = {
       });
     });
 
-    // 4. 캘린더 날짜별 이벤트 파싱
+    this.cachedStatusMap = globalStatusMap;
+    this.cachedNameStatusMap = nameStatusMap;
+    return { globalStatusMap, nameStatusMap };
+  },
+
+  async fetchMonthCalendar(year, month, forceStatusFetch = false) {
+    if (forceStatusFetch || !this.cachedStatusMap) {
+      await this.fetchCourseStatuses();
+    }
+    const globalStatusMap = this.cachedStatusMap || {};
+    const nameStatusMap = this.cachedNameStatusMap || {};
+
+    const curYear = year;
+    const curMonth = month;
+    const totalDays = new Date(curYear, curMonth, 0).getDate();
+
+    const timestamp = Math.floor(new Date(curYear, curMonth - 1, 1, 12, 0, 0).getTime() / 1000);
+    const calResp = await fetch(`https://plato.pusan.ac.kr/calendar/view.php?view=month&time=${timestamp}`, { credentials: 'same-origin' });
+    const calText = await calResp.text();
+
+    if (calResp.redirected && calResp.url.includes('/login/')) {
+      throw new Error('Session expired: redirected to login');
+    }
+    if ((calText.includes('id="form-login-sso"') || calText.includes('name="username"')) && calText.includes('name="password"')) {
+      throw new Error('Session expired: login form detected');
+    }
+
+    const calDoc = new DOMParser().parseFromString(calText, 'text/html');
+    const dayCells = calDoc.querySelectorAll('td.day');
+
     const rawEvents = [];
     const days = [];
+    const now = new Date();
 
-    dayCells.forEach(td => {
-      const dayNum = td.querySelector('.day-number')?.innerText?.trim() || td.getAttribute('data-day');
-      const day = dayNum ? parseInt(dayNum, 10) : null;
-      if (!day) return;
+    if (dayCells.length > 0) {
+      dayCells.forEach(td => {
+        if (td.classList.contains('othermonth') || td.classList.contains('noday')) return;
+        const dayNum = td.querySelector('.day-number')?.innerText?.trim() || td.getAttribute('data-day');
+        const day = dayNum ? parseInt(dayNum, 10) : null;
+        if (!day || day < 1 || day > totalDays) return;
 
-      const isToday = td.classList.contains('today');
-      const isWeekend = td.classList.contains('weekend');
+        const isToday = (curYear === now.getFullYear() && curMonth === (now.getMonth() + 1) && day === now.getDate());
+        const dObj = new Date(curYear, curMonth - 1, day);
+        const isWeekend = (dObj.getDay() === 0 || dObj.getDay() === 6);
 
-      const dayEvents = [];
-      td.querySelectorAll('li[data-region="event-item"]').forEach(li => {
-        const comp = li.getAttribute('data-event-component') || '';
-        const eventId = li.getAttribute('data-event-id') || li.querySelector('a[data-event-id]')?.getAttribute('data-event-id') || '';
-        const a = li.querySelector('a[href*="/mod/"]') || li.querySelector('a');
-        const href = a ? a.href : '';
-        let title = a ? (a.getAttribute('title') || a.innerText) : '';
-        title = title.replace(/&nbsp;/g, ' ').replace(/기한$/, '').trim();
+        const dayEvents = [];
+        td.querySelectorAll('li[data-region="event-item"]').forEach(li => {
+          const comp = li.getAttribute('data-event-component') || '';
+          const eventId = li.getAttribute('data-event-id') || li.querySelector('a[data-event-id]')?.getAttribute('data-event-id') || '';
+          const a = li.querySelector('a[href*="/mod/"]') || li.querySelector('a');
+          const href = a ? a.href : '';
+          let title = a ? (a.getAttribute('title') || a.innerText) : '';
+          title = title.replace(/&nbsp;/g, ' ').replace(/기한$/, '').trim();
 
-        const modIdMatch = href.match(/id=([0-9]+)/);
-        let modId = modIdMatch ? modIdMatch[1] : '';
-        if (href.includes('/calendar/view.php')) {
-          modId = ''; // 캘린더 링크 ID는 이벤트 ID이므로 cmid로 오인 방지
-        }
-
-        // 강좌명 추론: 캘린더 이벤트 DOM의 강좌 링크 또는 텍스트
-        const courseLink = li.closest('td')?.querySelector('.course-name, a[href*="/course/view.php"]') ||
-                           li.querySelector('a[href*="/course/view.php"]');
-        let inferredCourseName = courseLink ? this.cleanCourseName(courseLink.innerText) : '';
-
-        // modId 및 강좌명+제목 매핑으로 정확한 활동 상태 획득
-        let statusInfo = modId ? globalStatusMap[modId] : null;
-        if (!statusInfo && title) {
-          const cleanT = title.replace(/\s+/g, '');
-          // 우선 추론된 강좌명으로 탐색
-          if (inferredCourseName && nameStatusMap[`${inferredCourseName}_${cleanT}`]) {
-            statusInfo = nameStatusMap[`${inferredCourseName}_${cleanT}`];
-          } else {
-            // 전체 강좌 중 타이틀이 일치하는 활동 탐색
-            const matchedKey = Object.keys(nameStatusMap).find(k => k.endsWith(`_${cleanT}`));
-            if (matchedKey) statusInfo = nameStatusMap[matchedKey];
+          const modIdMatch = href.match(/id=([0-9]+)/);
+          let modId = modIdMatch ? modIdMatch[1] : '';
+          if (href.includes('/calendar/view.php')) {
+            modId = '';
           }
-        }
 
-        const isCompleted = statusInfo ? statusInfo.isCompleted : false;
-        const courseName = statusInfo ? statusInfo.courseName : (inferredCourseName || '교과과정');
-        const parsedPeriod = statusInfo ? statusInfo.parsedPeriod : '';
+          const courseLink = li.closest('td')?.querySelector('.course-name, a[href*="/course/view.php"]') ||
+                             li.querySelector('a[href*="/course/view.php"]');
+          let inferredCourseName = courseLink ? this.cleanCourseName(courseLink.innerText) : '';
 
-        const ev = {
+          let statusInfo = modId ? globalStatusMap[modId] : null;
+          if (!statusInfo && title) {
+            const cleanT = title.replace(/\s+/g, '');
+            if (inferredCourseName && nameStatusMap[`${inferredCourseName}_${cleanT}`]) {
+              statusInfo = nameStatusMap[`${inferredCourseName}_${cleanT}`];
+            } else {
+              const matchedKey = Object.keys(nameStatusMap).find(k => k.endsWith(`_${cleanT}`));
+              if (matchedKey) statusInfo = nameStatusMap[matchedKey];
+            }
+          }
+
+          const isCompleted = statusInfo ? statusInfo.isCompleted : false;
+          const courseName = statusInfo ? statusInfo.courseName : (inferredCourseName || '교과과정');
+          const parsedPeriod = statusInfo ? statusInfo.parsedPeriod : '';
+
+          const ev = {
+            day,
+            eventId,
+            modId,
+            comp,
+            type: comp === 'mod_assign' ? '과제' : comp === 'mod_vod' ? '강의' : comp === 'mod_quiz' ? '퀴즈' : '활동',
+            title,
+            href,
+            isCompleted,
+            courseName,
+            parsedPeriod
+          };
+
+          dayEvents.push(ev);
+          rawEvents.push(ev);
+        });
+
+        days.push({
           day,
-          eventId,
-          modId,
-          comp,
-          type: comp === 'mod_assign' ? '과제' : comp === 'mod_vod' ? '강의' : comp === 'mod_quiz' ? '퀴즈' : '활동',
-          title,
-          href,
-          isCompleted,
-          courseName,
-          parsedPeriod
-        };
-
-        dayEvents.push(ev);
-        rawEvents.push(ev);
+          isToday,
+          isWeekend,
+          events: dayEvents
+        });
       });
+    }
 
-      days.push({
-        day,
-        isToday,
-        isWeekend,
-        events: dayEvents
-      });
-    });
+    if (days.length === 0) {
+      for (let day = 1; day <= totalDays; day++) {
+        const isToday = (curYear === now.getFullYear() && curMonth === (now.getMonth() + 1) && day === now.getDate());
+        const dObj = new Date(curYear, curMonth - 1, day);
+        const isWeekend = (dObj.getDay() === 0 || dObj.getDay() === 6);
+        days.push({ day, isToday, isWeekend, events: [] });
+      }
+    }
 
-    // 5. 활동별 시작일 및 마감일(기간) 산출 및 유니크 활동 목록 구성 (강좌별 독립 키 적용으로 오염 방지)
+    // 일자 순 정렬 (1일부터 오름차순)
+    days.sort((a, b) => a.day - b.day);
+
+    // 활동별 시작일 및 마감일(기간) 산출 및 유니크 활동 목록 구성
     const uniqueMap = new Map();
     rawEvents.forEach(ev => {
       const key = ev.modId 
@@ -606,7 +763,6 @@ const PlatoCalendar = {
         if (ev.day > existing.dueDay) {
           existing.dueDay = ev.day;
         }
-        // 둘 중 하나라도 완료 상태가 아니면 미완료로 정확히 유지 (오탐 방지)
         if (ev.isCompleted !== undefined && !ev.isCompleted) {
           existing.isCompleted = false;
         }
@@ -616,20 +772,56 @@ const PlatoCalendar = {
       }
     });
 
+    // 강좌 활동 현황 중 해당 월에 마감인 항목이 캘린더 HTML에서 누락된 경우 보정
+    if (globalStatusMap) {
+      Object.values(globalStatusMap).forEach(item => {
+        if (!item.parsedPeriod) return;
+        const matches = [...item.parsedPeriod.matchAll(/(\d{1,2})월\s*(\d{1,2})일/g)];
+        if (matches.length === 0) return;
+        const lastMatch = matches[matches.length - 1];
+        const dueM = parseInt(lastMatch[1], 10);
+        const dueD = parseInt(lastMatch[2], 10);
+
+        if (dueM === curMonth && dueD >= 1 && dueD <= totalDays) {
+          const key = `${item.courseName}_mod_${item.modId}`;
+          if (!uniqueMap.has(key)) {
+            const firstMatch = matches[0];
+            const startD = (parseInt(firstMatch[1], 10) === curMonth) ? parseInt(firstMatch[2], 10) : dueD;
+            const newAct = {
+              day: dueD,
+              startDay: startD,
+              dueDay: dueD,
+              eventId: '',
+              modId: item.modId,
+              comp: 'mod_activity',
+              type: item.name.includes('과제') ? '과제' : item.name.includes('퀴즈') ? '퀴즈' : '활동',
+              title: item.name,
+              href: item.href || '',
+              isCompleted: item.isCompleted,
+              courseName: item.courseName,
+              parsedPeriod: item.parsedPeriod
+            };
+            uniqueMap.set(key, newAct);
+
+            const targetDayObj = days.find(d => d.day === dueD);
+            if (targetDayObj) {
+              targetDayObj.events.push(newAct);
+            }
+          }
+        }
+      });
+    }
+
     const uniqueActivities = Array.from(uniqueMap.values());
 
-    // 오늘 날짜 기준 D-Day 및 기간/상태(완료: 초록, 지난것: 회색, 안된것: 빨강) 계산
-    const todayDate = new Date();
-    const currentDay = todayDate.getDate();
+    // 정확한 D-Day 계산 (연도/월 차이 반영)
+    const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
 
     uniqueActivities.forEach(item => {
-      const diff = item.dueDay - currentDay;
+      const dueMidnight = new Date(curYear, curMonth - 1, item.dueDay).getTime();
+      const diff = Math.round((dueMidnight - todayMidnight) / (1000 * 60 * 60 * 24));
       item.dDayDiff = diff;
 
-      // 상태 분류:
-      // 1. 완료: 초록색 ('done')
-      // 2. 지난 것 (마감 지남 & 미완료): 회색 ('passed')
-      // 3. 안된 것 (미완료 & 마감 전/당일): 빨간색 ('pending')
       if (item.isCompleted) {
         item.statusType = 'done';
         item.statusLabel = '완료';
@@ -652,11 +844,9 @@ const PlatoCalendar = {
         item.dDayText = `D-${diff}`;
       }
 
-      // 기간 텍스트: 몇월 며칠(요일)부터 몇월 며칠(요일)까지
       item.periodText = this.formatPeriodText(item.parsedPeriod, curYear, curMonth, item.startDay, item.dueDay);
     });
 
-    // 각 날짜(day)별 최종 마감 활동 매핑
     const dayDueActivitiesMap = {};
     uniqueActivities.forEach(act => {
       if (!dayDueActivitiesMap[act.dueDay]) {
@@ -665,7 +855,6 @@ const PlatoCalendar = {
       dayDueActivitiesMap[act.dueDay].push(act);
     });
 
-    // 정렬: 안된 것(빨강) -> 지난 것(회색) -> 완료(초록), 마감 임박 순
     uniqueActivities.sort((a, b) => {
       const rank = { pending: 1, passed: 2, done: 3 };
       if (rank[a.statusType] !== rank[b.statusType]) {
@@ -675,7 +864,6 @@ const PlatoCalendar = {
     });
 
     return {
-      monthTitle,
       curYear,
       curMonth,
       days,
@@ -688,21 +876,24 @@ const PlatoCalendar = {
     if (!this.cachedData) return;
     const { curYear, curMonth, days } = this.cachedData;
 
-    // 1. 헤더 업데이트 (2026년 위에, 9월 크게 중앙)
     const yearEl = document.querySelector('#plato-cal-year-text');
     if (yearEl) yearEl.innerText = `${curYear}년`;
 
     const monthEl = document.querySelector('#plato-cal-month-text');
     if (monthEl) monthEl.innerText = `${curMonth}월`;
 
-    // 2. 대형 캘린더 그리드 렌더링
-    this.renderLargeDaysGrid(days);
+    const today = new Date();
+    const isCurrentMonth = (curYear === today.getFullYear() && curMonth === (today.getMonth() + 1));
+    const todayBtn = document.querySelector('#plato-cal-today-btn');
+    if (todayBtn) {
+      todayBtn.style.display = isCurrentMonth ? 'none' : 'inline-block';
+    }
 
-    // 3. 상세 패널 렌더링
+    this.renderLargeDaysGrid(days, curYear, curMonth);
     this.renderDetailPanel();
   },
 
-  renderLargeDaysGrid(days) {
+  renderLargeDaysGrid(days, curYear, curMonth) {
     const grid = document.querySelector('#plato-large-days-grid');
     if (!grid) return;
     grid.innerHTML = '';
@@ -712,8 +903,7 @@ const PlatoCalendar = {
     // 1일 요일 맞춤 빈 셀
     const firstDay = days[0];
     if (firstDay && firstDay.day === 1) {
-      const now = new Date();
-      const d = new Date(now.getFullYear(), now.getMonth(), 1);
+      const d = new Date(curYear, curMonth - 1, 1);
       const startDayOfWeek = d.getDay();
       for (let i = 0; i < startDayOfWeek; i++) {
         const empty = document.createElement('div');
@@ -722,14 +912,17 @@ const PlatoCalendar = {
       }
     }
 
+    const now = new Date();
+
     days.forEach((d) => {
       const cell = document.createElement('div');
       cell.className = 'plato-large-day-cell';
-      if (d.isToday) cell.classList.add('today');
+      
+      const isToday = (curYear === now.getFullYear() && curMonth === (now.getMonth() + 1) && d.day === now.getDate());
+      if (isToday) cell.classList.add('today');
       if (this.selectedDay === d.day) cell.classList.add('selected');
 
-      const now = new Date();
-      const dayOfWeek = new Date(now.getFullYear(), now.getMonth(), d.day).getDay();
+      const dayOfWeek = new Date(curYear, curMonth - 1, d.day).getDay();
       if (dayOfWeek === 0) cell.classList.add('weekend-sun');
       if (dayOfWeek === 6) cell.classList.add('weekend-sat');
 
@@ -738,7 +931,7 @@ const PlatoCalendar = {
       const doneCount = dueActs.filter(a => a.statusType === 'done').length;
       const passedCount = dueActs.filter(a => a.statusType === 'passed').length;
 
-      // 상태별 셀 하이라이트 (안된 것 있으면 빨간 액센트, 전부 완료면 초록 액센트)
+      // 상태별 셀 하이라이트
       if (pendingCount > 0) {
         cell.classList.add('has-pending');
       } else if (doneCount > 0 && passedCount === 0) {
@@ -755,7 +948,7 @@ const PlatoCalendar = {
         countBadgeHtml = `<span class="plato-day-badge badge-passed">${passedCount}</span>`;
       }
 
-      // 셀 내부 칩들: 색상이 크고 직관적으로 드러남 (안된것: 빨강, 지난것: 회색, 완료: 초록)
+      // 셀 내부 칩들
       let chipsHtml = '';
       if (dueActs.length > 0) {
         const maxDisplay = 2;
@@ -776,7 +969,7 @@ const PlatoCalendar = {
         chipsHtml = `<div class="plato-day-events-container"></div>`;
       }
 
-      const dayTooltip = d.isToday ? `오늘 (${d.day}일)` : `${d.day}일`;
+      const dayTooltip = isToday ? `오늘 (${d.day}일)` : `${d.day}일`;
       cell.innerHTML = `
         <div class="plato-day-top-row">
           <span class="plato-day-num" title="${dayTooltip}">${d.day}</span>
@@ -785,7 +978,6 @@ const PlatoCalendar = {
         ${chipsHtml}
       `;
 
-      // 클릭 시 선택/토글 및 상세 패널 갱신
       cell.addEventListener('click', () => {
         if (this.selectedDay === d.day) {
           this.selectedDay = null;
