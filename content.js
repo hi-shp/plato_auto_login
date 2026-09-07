@@ -2473,7 +2473,10 @@ const attemptLogin = () => {
         if (lockTarget && !lockTarget.dataset.autoLoggingIn && u && p && b && data.userId && data.userPw) {
           lockTarget.dataset.autoLoggingIn = "1";
           u.dataset.done = "1";
-          if (isPlato) sessionStorage.setItem('plato_need_calendar_refresh', '1');
+          if (isPlato) {
+            sessionStorage.setItem('plato_need_calendar_refresh', '1');
+            sessionStorage.removeItem('plato_user_went_home');
+          }
 
           // 값 주입 및 이벤트 발생
           u.value = data.userId;
@@ -2501,6 +2504,7 @@ const attemptLogin = () => {
         if (!isLoginPage) {
           if (!document.body.dataset.loginRedirecting) {
             document.body.dataset.loginRedirecting = "1";
+            if (isPlato) sessionStorage.removeItem('plato_user_went_home');
             let loginUrl;
             if (isDevPlato) {
               loginUrl = `https://${host}/login.php?wantsurl=${encodeURIComponent(href)}`;
@@ -2527,10 +2531,18 @@ const attemptLogin = () => {
         sessionStorage.removeItem('plato_login_failed');
 
         if (isPlato) {
-          // 플라토 메인 홈(/ 또는 /index.php)인 경우 자동으로 교과과정 페이지로 이동
-          // 캘린더 기능이 OFF인 경우 홈→교과과정 리다이렉트도 비활성화
+          // 플라토 메인 홈(/ 또는 /index.php)인 경우 처리
+          // 사용자가 홈 버튼(<a href="/" class="btn-channel nav-link" role="menuitem"> 등)이나 로고를 직접 눌러 이동한 경우,
+          // 또는 내부 교과과정 페이지 등에서 홈으로 이동한 경우 교과과정 재리다이렉트 방지
           const isHome = path === "/" || path === "/index.php" || path === "";
-          if (isHome && data.platoCalendarToggle !== false) {
+          const userWentHome = sessionStorage.getItem('plato_user_went_home') === 'true';
+          const cameFromInternal = !!(document.referrer && 
+                                      document.referrer.includes('plato.pusan.ac.kr') && 
+                                      !document.referrer.includes('/login'));
+
+          if (isHome && (userWentHome || cameFromInternal)) {
+            sessionStorage.setItem('plato_user_went_home', 'true');
+          } else if (isHome && data.platoCalendarToggle !== false) {
             const now = Date.now();
             const lastRedirect = parseInt(sessionStorage.getItem('plato_last_course_redirect') || '0', 10);
             // 무한 루프 방지: 3초 이내 중복 리다이렉트 방지
@@ -2584,6 +2596,31 @@ const checkInterval = setInterval(() => {
   }
   attemptLogin();
 }, 2000);
+
+// 플라토 홈 버튼 및 네비게이션 클릭 감지: 사용자가 직접 홈으로 이동할 때 교과과정 재리다이렉트 방지
+if (window.location.hostname.includes("plato.pusan.ac.kr")) {
+  document.addEventListener('click', (e) => {
+    const link = e.target.closest('a');
+    if (!link) return;
+    const href = link.getAttribute('href') || '';
+    const isHomeHref = href === '/' ||
+                       href === '/index.php' ||
+                       href === 'https://plato.pusan.ac.kr/' ||
+                       href === 'https://plato.pusan.ac.kr' ||
+                       href === 'https://plato.pusan.ac.kr/index.php';
+    const isHomeText = link.querySelector('.menuname')?.textContent?.trim() === '홈' ||
+                       link.textContent?.trim() === '홈';
+    const isHomeMenu = link.classList.contains('btn-channel') ||
+                       link.getAttribute('role') === 'menuitem' ||
+                       link.classList.contains('navbar-brand');
+
+    if (isHomeHref && (isHomeText || isHomeMenu || href === '/')) {
+      sessionStorage.setItem('plato_user_went_home', 'true');
+    } else if (href.includes('/local/ubion/allcourse/')) {
+      sessionStorage.removeItem('plato_user_went_home');
+    }
+  }, true);
+}
 
 // 교과과정 페이지 진입 시 지연 없이 캘린더 즉시 초기화
 if (window.location.hostname === "plato.pusan.ac.kr" &&
