@@ -2,8 +2,6 @@
    PLATO CLEAN CALENDAR & DASHBOARD ENGINE (MINIMALIST & FIXED GRID)
    ========================================================================== */
 const PlatoCalendar = {
-  cooldownSeconds: 5,
-  timerId: null,
   selectedDay: null,
   cachedData: null,
   viewYear: new Date().getFullYear(),
@@ -391,11 +389,8 @@ const PlatoCalendar = {
   },
 
   loadCachedData() {
-    chrome.storage.local.get(['plato_calendar_data', 'plato_calendar_months', 'plato_calendar_last_fetch'], (res) => {
+    chrome.storage.local.get(['plato_calendar_data', 'plato_calendar_months'], (res) => {
       if (chrome.runtime.lastError) return;
-      const now = Date.now();
-      const lastFetch = res.plato_calendar_last_fetch || 0;
-      const elapsed = now - lastFetch;
 
       if (res.plato_calendar_months) {
         this.monthCache = res.plato_calendar_months;
@@ -409,61 +404,25 @@ const PlatoCalendar = {
       const hasValidData = (this.monthCache[currentMonthKey] && this.monthCache[currentMonthKey].activities && this.monthCache[currentMonthKey].activities.length > 0) ||
                            (res.plato_calendar_data && res.plato_calendar_data.activities && res.plato_calendar_data.activities.length > 0);
 
-      // 재로그인 직후이거나, 유효한 데이터가 없거나, 쿨다운(5초)이 경과한 경우(컴퓨터 재부팅, 새로운 세션 포함) 갱신
-      const needForceRefresh = sessionStorage.getItem('plato_need_calendar_refresh') === '1' || !hasValidData || elapsed >= this.cooldownSeconds * 1000;
+      const needForceRefresh = sessionStorage.getItem('plato_need_calendar_refresh') === '1' || !hasValidData;
 
       if (needForceRefresh) {
         sessionStorage.removeItem('plato_need_calendar_refresh');
-        // 갱신 중일 때는 이전 일정이 남아있지 않도록 달력 일정을 깨끗이 비우고 기본 그리드만 표시
         this.renderEmptyMonthGrid(this.viewYear, this.viewMonth);
         this.fetchAndRefreshData();
       } else {
-        // 쿨다운 이내(5초 미만)의 최신 캐시가 있는 경우에만 기존 데이터 즉시 표시
         if (this.monthCache[currentMonthKey]) {
           this.cachedData = this.monthCache[currentMonthKey];
         } else if (res.plato_calendar_data) {
           this.cachedData = res.plato_calendar_data;
         }
         this.render();
-        this.startCooldownTimer(Math.ceil((this.cooldownSeconds * 1000 - elapsed) / 1000));
       }
     });
   },
 
   handleManualRefresh() {
-    chrome.storage.local.get(['plato_calendar_last_fetch'], (res) => {
-      const now = Date.now();
-      const lastFetch = res.plato_calendar_last_fetch || 0;
-      const remaining = Math.ceil((this.cooldownSeconds * 1000 - (now - lastFetch)) / 1000);
-
-      if (remaining > 0) {
-        this.startCooldownTimer(remaining);
-        return;
-      }
-
-      this.fetchAndRefreshData();
-    });
-  },
-
-  startCooldownTimer(seconds) {
-    clearInterval(this.timerId);
-    let remaining = seconds;
-    const btn = document.querySelector('#plato-refresh-btn');
-    const txt = document.querySelector('#plato-refresh-text');
-
-    if (btn) btn.disabled = true;
-    if (txt) txt.innerText = `새로고침 (${remaining}초)`;
-
-    this.timerId = setInterval(() => {
-      remaining--;
-      if (remaining <= 0) {
-        clearInterval(this.timerId);
-        if (btn) btn.disabled = false;
-        if (txt) txt.innerText = '새로고침';
-      } else {
-        if (txt) txt.innerText = `새로고침 (${remaining}초)`;
-      }
-    }, 1000);
+    this.fetchAndRefreshData();
   },
 
   cleanHtmlForParsing(html) {
@@ -512,15 +471,12 @@ const PlatoCalendar = {
           plato_calendar_last_fetch: now
         });
         this.render();
-        this.startCooldownTimer(this.cooldownSeconds);
-      } else {
-        if (btn) btn.disabled = false;
       }
     } catch (e) {
       console.error('Failed to fetch plato calendar data:', e);
-      if (btn) btn.disabled = false;
     } finally {
       this.setLoading(false);
+      if (btn) btn.disabled = false;
     }
   },
 
