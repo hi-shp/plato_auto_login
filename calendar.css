@@ -217,11 +217,91 @@
 }
 
 /* ==========================================================================
-   FIXED-WIDTH FULL CALENDAR GRID
+   FIXED-WIDTH FULL CALENDAR GRID & LOADING OVERLAY
    ========================================================================== */
 .plato-cal-grid-card {
   margin-top: 16px;
   width: 100%;
+  position: relative;
+}
+
+/* 갱신/로딩 중 흐림 배경 및 상태 배지 오버레이 */
+.plato-cal-loading-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(255, 255, 255, 0.76);
+  backdrop-filter: blur(2.5px);
+  -webkit-backdrop-filter: blur(2.5px);
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 20;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+
+.plato-cal-loading-overlay.active {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.plato-cal-loading-content {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  background: #ffffff;
+  padding: 12px 24px;
+  border-radius: 30px;
+  border: 1.5px solid #cbd5e1;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+  color: #0f172a;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+  user-select: none;
+}
+
+.plato-cal-loading-overlay.active .plato-cal-loading-content {
+  animation: platoBadgePop 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.plato-loading-spinner {
+  width: 18px;
+  height: 18px;
+  border: 2.5px solid #e2e8f0;
+  border-top-color: #0284c7;
+  border-radius: 50%;
+  animation: platoSpin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+
+.plato-refresh-btn:disabled .plato-btn-icon {
+  animation: platoSpin 0.9s linear infinite;
+}
+
+@keyframes platoSpin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes platoBadgePop {
+  0% {
+    transform: scale(0.92);
+    opacity: 0.8;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
 }
 
 .plato-cal-weekdays {

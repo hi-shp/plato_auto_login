@@ -203,12 +203,20 @@ const PlatoCalendar = {
         </div>
 
         <!-- 고정 7열 대형 월간 캘린더 그리드 -->
-        <div class="plato-cal-grid-card">
+        <div class="plato-cal-grid-card" id="plato-cal-grid-card">
           <div class="plato-cal-weekdays">
             <span>일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span>
           </div>
           <div class="plato-large-days-grid" id="plato-large-days-grid">
             <!-- 일자 셀들이 여기에 렌더링됨 -->
+          </div>
+
+          <!-- 갱신/동기화 중 상태를 명확히 보여주는 오버레이 인디케이터 -->
+          <div class="plato-cal-loading-overlay" id="plato-cal-loading-overlay">
+            <div class="plato-cal-loading-content">
+              <div class="plato-loading-spinner"></div>
+              <span id="plato-loading-text">최신 일정 동기화 중...</span>
+            </div>
           </div>
         </div>
 
@@ -284,6 +292,19 @@ const PlatoCalendar = {
     chrome.storage.local.set({ platoCalendarCollapsed: collapsed });
   },
 
+  setLoading(isLoading, text = '최신 일정 동기화 중...') {
+    const overlay = document.querySelector('#plato-cal-loading-overlay');
+    const loadingText = document.querySelector('#plato-loading-text');
+    if (!overlay) return;
+
+    if (isLoading) {
+      if (loadingText) loadingText.innerText = text;
+      overlay.classList.add('active');
+    } else {
+      overlay.classList.remove('active');
+    }
+  },
+
   async prevMonth() {
     let y = this.viewYear;
     let m = this.viewMonth - 1;
@@ -324,8 +345,9 @@ const PlatoCalendar = {
       return;
     }
 
-    // 캐시가 아직 없으면 해당 월의 기본 날짜 그리드를 즉시 렌더링하여 화면 깜빡임/지연 방지
+    // 캐시가 아직 없으면 해당 월의 기본 날짜 그리드를 즉시 렌더링하고 로딩 오버레이 표시
     this.renderEmptyMonthGrid(year, month);
+    this.setLoading(true, `${month}월 일정 불러오는 중...`);
 
     const reqId = ++this.navRequestId;
 
@@ -341,6 +363,10 @@ const PlatoCalendar = {
       }
     } catch (err) {
       console.error('Failed to load month calendar:', err);
+    } finally {
+      if (reqId === this.navRequestId) {
+        this.setLoading(false);
+      }
     }
   },
 
@@ -446,9 +472,10 @@ const PlatoCalendar = {
     if (btn) btn.disabled = true;
     if (txt) txt.innerText = '갱신 중...';
 
-    // 갱신 중에는 이전 일정 표시를 모두 비우고 기본 그리드만 표시
+    // 갱신 중에는 이전 일정 표시를 모두 비우고 기본 그리드만 표시하며 로딩 오버레이 노출
     this.selectedDay = null;
     this.renderEmptyMonthGrid(this.viewYear, this.viewMonth);
+    this.setLoading(true, '최신 일정 동기화 중...');
 
     try {
       await this.fetchCourseStatuses();
@@ -472,6 +499,8 @@ const PlatoCalendar = {
       console.error('Failed to fetch plato calendar data:', e);
       if (btn) btn.disabled = false;
       if (txt) txt.innerText = '새로고침 실패';
+    } finally {
+      this.setLoading(false);
     }
   },
 
