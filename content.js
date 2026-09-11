@@ -962,6 +962,21 @@ const PlatoCalendar = {
       dayDueActivitiesMap[act.dueDay].push(act);
     });
 
+    // 빨간색 미완료(pending) 일정을 최우선으로, 그 다음 기한 지남(passed), 완료(done) 순으로 정렬
+    Object.keys(dayDueActivitiesMap).forEach(day => {
+      dayDueActivitiesMap[day].sort((a, b) => {
+        const rank = { pending: 1, passed: 2, done: 3 };
+        const rA = rank[a.statusType] || 99;
+        const rB = rank[b.statusType] || 99;
+        if (rA !== rB) return rA - rB;
+        const typeRank = { '과제': 1, '퀴즈': 2, '강의': 3, '활동': 4 };
+        const tA = typeRank[a.type] || 5;
+        const tB = typeRank[b.type] || 5;
+        if (tA !== tB) return tA - tB;
+        return (a.title || '').localeCompare(b.title || '');
+      });
+    });
+
     // 각 일자별 이벤트 목록을 마감일 기준 활동 목록으로 정확히 동기화
     days.forEach(dObj => {
       dObj.events = dayDueActivitiesMap[dObj.day] || [];
@@ -972,7 +987,14 @@ const PlatoCalendar = {
       if (rank[a.statusType] !== rank[b.statusType]) {
         return rank[a.statusType] - rank[b.statusType];
       }
-      return a.dueDay - b.dueDay;
+      if (a.dueDay !== b.dueDay) {
+        return a.dueDay - b.dueDay;
+      }
+      const typeRank = { '과제': 1, '퀴즈': 2, '강의': 3, '활동': 4 };
+      const tA = typeRank[a.type] || 5;
+      const tB = typeRank[b.type] || 5;
+      if (tA !== tB) return tA - tB;
+      return (a.title || '').localeCompare(b.title || '');
     });
 
     return {
@@ -1036,7 +1058,20 @@ const PlatoCalendar = {
       if (dayOfWeek === 0) cell.classList.add('weekend-sun');
       if (dayOfWeek === 6) cell.classList.add('weekend-sat');
 
-      const dueActs = dayDueMap[d.day] || [];
+      const rawDueActs = dayDueMap[d.day] || [];
+      // 빨간색 미완료(pending) 일정을 최우선으로, 그 다음 기한 지남(passed), 완료(done) 순으로 정렬
+      const dueActs = rawDueActs.slice().sort((a, b) => {
+        const rank = { pending: 1, passed: 2, done: 3 };
+        const rA = rank[a.statusType] || 99;
+        const rB = rank[b.statusType] || 99;
+        if (rA !== rB) return rA - rB;
+        const typeRank = { '과제': 1, '퀴즈': 2, '강의': 3, '활동': 4 };
+        const tA = typeRank[a.type] || 5;
+        const tB = typeRank[b.type] || 5;
+        if (tA !== tB) return tA - tB;
+        return (a.title || '').localeCompare(b.title || '');
+      });
+
       const pendingCount = dueActs.filter(a => a.statusType === 'pending').length;
       const doneCount = dueActs.filter(a => a.statusType === 'done').length;
       const passedCount = dueActs.filter(a => a.statusType === 'passed').length;
@@ -1066,10 +1101,22 @@ const PlatoCalendar = {
         }
       }
 
-      // 셀 내부 칩들 (지난 날짜는 했든 안했든 무조건 회색 칩)
+      // 셀 내부 칩들 (미완료 빨간색 일정 우선 노출)
       let chipsHtml = '';
       if (dueActs.length > 0) {
-        const maxDisplay = 2;
+        // 미완료(pending) 일정이 우선적으로 다 노출되도록 표시 개수 동적 결정:
+        // - 전체 일정이 3개 이하이면 3개 모두 표시 (+1 뱃지 대신 실제 일정 노출)
+        // - 미완료 일정이 3개 이상이면 미완료 일정을 3개까지 우선 노출
+        // - 그 외 기본 2개 노출 + 남은 개수 뱃지(+N)
+        let maxDisplay = 2;
+        if (dueActs.length <= 3) {
+          maxDisplay = dueActs.length;
+        } else if (pendingCount >= 3) {
+          maxDisplay = 3;
+        } else {
+          maxDisplay = 2;
+        }
+
         const visibleActs = dueActs.slice(0, maxDisplay);
         const remainCount = dueActs.length - maxDisplay;
 
@@ -1137,7 +1184,18 @@ const PlatoCalendar = {
 
     if (!this.cachedData) return;
 
-    const items = (this.cachedData.activities || []).filter(a => a.dueDay === this.selectedDay);
+    const rawItems = (this.cachedData.activities || []).filter(a => a.dueDay === this.selectedDay);
+    const items = rawItems.slice().sort((a, b) => {
+      const rank = { pending: 1, passed: 2, done: 3 };
+      const rA = rank[a.statusType] || 99;
+      const rB = rank[b.statusType] || 99;
+      if (rA !== rB) return rA - rB;
+      const typeRank = { '과제': 1, '퀴즈': 2, '강의': 3, '활동': 4 };
+      const tA = typeRank[a.type] || 5;
+      const tB = typeRank[b.type] || 5;
+      if (tA !== tB) return tA - tB;
+      return (a.title || '').localeCompare(b.title || '');
+    });
     const curYear = this.cachedData.curYear;
     const curMonth = this.cachedData.curMonth;
     const d = new Date(curYear, curMonth - 1, this.selectedDay);
@@ -2157,6 +2215,21 @@ const BbitsCalendar = {
       dayDueActivitiesMap[act.dueDay].push(act);
     });
 
+    // 빨간색 미완료(pending) 일정을 최우선으로, 그 다음 기한 지남(passed), 완료(done) 순으로 정렬
+    Object.keys(dayDueActivitiesMap).forEach(day => {
+      dayDueActivitiesMap[day].sort((a, b) => {
+        const rank = { pending: 1, passed: 2, done: 3 };
+        const rA = rank[a.statusType] || 99;
+        const rB = rank[b.statusType] || 99;
+        if (rA !== rB) return rA - rB;
+        const typeRank = { '과제': 1, '퀴즈': 2, '강의': 3, '활동': 4 };
+        const tA = typeRank[a.type] || 5;
+        const tB = typeRank[b.type] || 5;
+        if (tA !== tB) return tA - tB;
+        return (a.title || '').localeCompare(b.title || '');
+      });
+    });
+
     // 각 일자별 이벤트 목록을 마감일 기준 활동 목록으로 할당 (시작일 표시 원천 제거)
     days.forEach(dObj => {
       dObj.events = dayDueActivitiesMap[dObj.day] || [];
@@ -2167,7 +2240,14 @@ const BbitsCalendar = {
       if (rank[a.statusType] !== rank[b.statusType]) {
         return rank[a.statusType] - rank[b.statusType];
       }
-      return a.dueDay - b.dueDay;
+      if (a.dueDay !== b.dueDay) {
+        return a.dueDay - b.dueDay;
+      }
+      const typeRank = { '과제': 1, '퀴즈': 2, '강의': 3, '활동': 4 };
+      const tA = typeRank[a.type] || 5;
+      const tB = typeRank[b.type] || 5;
+      if (tA !== tB) return tA - tB;
+      return (a.title || '').localeCompare(b.title || '');
     });
 
     return {
@@ -2230,7 +2310,20 @@ const BbitsCalendar = {
       if (dayOfWeek === 0) cell.classList.add('weekend-sun');
       if (dayOfWeek === 6) cell.classList.add('weekend-sat');
 
-      const dueActs = dayDueMap[d.day] || [];
+      const rawDueActs = dayDueMap[d.day] || [];
+      // 빨간색 미완료(pending) 일정을 최우선으로, 그 다음 기한 지남(passed), 완료(done) 순으로 정렬
+      const dueActs = rawDueActs.slice().sort((a, b) => {
+        const rank = { pending: 1, passed: 2, done: 3 };
+        const rA = rank[a.statusType] || 99;
+        const rB = rank[b.statusType] || 99;
+        if (rA !== rB) return rA - rB;
+        const typeRank = { '과제': 1, '퀴즈': 2, '강의': 3, '활동': 4 };
+        const tA = typeRank[a.type] || 5;
+        const tB = typeRank[b.type] || 5;
+        if (tA !== tB) return tA - tB;
+        return (a.title || '').localeCompare(b.title || '');
+      });
+
       const pendingCount = dueActs.filter(a => a.statusType === 'pending').length;
       const doneCount = dueActs.filter(a => a.statusType === 'done').length;
       const passedCount = dueActs.filter(a => a.statusType === 'passed').length;
@@ -2260,10 +2353,22 @@ const BbitsCalendar = {
         }
       }
 
-      // 셀 내부 칩들 (지난 날짜는 했든 안했든 무조건 회색 칩)
+      // 셀 내부 칩들 (미완료 빨간색 일정 우선 노출)
       let chipsHtml = '';
       if (dueActs.length > 0) {
-        const maxDisplay = 2;
+        // 미완료(pending) 일정이 우선적으로 다 노출되도록 표시 개수 동적 결정:
+        // - 전체 일정이 3개 이하이면 3개 모두 표시 (+1 뱃지 대신 실제 일정 노출)
+        // - 미완료 일정이 3개 이상이면 미완료 일정을 3개까지 우선 노출
+        // - 그 외 기본 2개 노출 + 남은 개수 뱃지(+N)
+        let maxDisplay = 2;
+        if (dueActs.length <= 3) {
+          maxDisplay = dueActs.length;
+        } else if (pendingCount >= 3) {
+          maxDisplay = 3;
+        } else {
+          maxDisplay = 2;
+        }
+
         const visibleActs = dueActs.slice(0, maxDisplay);
         const remainCount = dueActs.length - maxDisplay;
 
@@ -2329,7 +2434,18 @@ const BbitsCalendar = {
 
     if (!this.cachedData) return;
 
-    const items = (this.cachedData.activities || []).filter(a => a.dueDay === this.selectedDay);
+    const rawItems = (this.cachedData.activities || []).filter(a => a.dueDay === this.selectedDay);
+    const items = rawItems.slice().sort((a, b) => {
+      const rank = { pending: 1, passed: 2, done: 3 };
+      const rA = rank[a.statusType] || 99;
+      const rB = rank[b.statusType] || 99;
+      if (rA !== rB) return rA - rB;
+      const typeRank = { '과제': 1, '퀴즈': 2, '강의': 3, '활동': 4 };
+      const tA = typeRank[a.type] || 5;
+      const tB = typeRank[b.type] || 5;
+      if (tA !== tB) return tA - tB;
+      return (a.title || '').localeCompare(b.title || '');
+    });
     const curYear = this.cachedData.curYear;
     const curMonth = this.cachedData.curMonth;
     const d = new Date(curYear, curMonth - 1, this.selectedDay);
