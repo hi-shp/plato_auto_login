@@ -7,6 +7,7 @@ const PlatoCalendar = {
   viewYear: new Date().getFullYear(),
   viewMonth: new Date().getMonth() + 1,
   monthCache: {},
+  monthCacheTimestamps: {},
   cachedStatusMap: null,
   cachedNameStatusMap: null,
   cachedCourses: null,
@@ -341,27 +342,43 @@ const PlatoCalendar = {
     this.renderDetailPanel();
 
     const cacheKey = `${year}_${month}`;
-    if (this.monthCache[cacheKey]) {
+    const hasCache = !!this.monthCache[cacheKey];
+
+    if (hasCache) {
+      // 1. 캐시가 있으면 지연 없이 즉시 렌더링하여 빠른 화면 전환
       this.cachedData = this.monthCache[cacheKey];
       this.render();
-      return;
-    }
 
-    // 캐시가 아직 없으면 해당 월의 기본 날짜 그리드를 즉시 렌더링하고 로딩 오버레이 표시
-    this.renderEmptyMonthGrid(year, month);
-    this.setLoading(true);
+      // 캐시가 최근 60초 이내에 갱신되었으면 불필요한 백그라운드 재요청 생략
+      const lastFetch = this.monthCacheTimestamps?.[cacheKey] || 0;
+      if (Date.now() - lastFetch < 60000) {
+        return;
+      }
+    } else {
+      // 2. 캐시가 아직 없으면 해당 월의 기본 날짜 그리드를 즉시 렌더링하고 로딩 오버레이 표시
+      this.renderEmptyMonthGrid(year, month);
+      this.setLoading(true);
+    }
 
     const reqId = ++this.navRequestId;
 
     try {
+      // 백그라운드 최신 데이터 동기화 (Stale-While-Revalidate: 캐시가 있어도 최신 과제 확인)
       const data = await this.fetchMonthCalendar(year, month);
       if (reqId === this.navRequestId && data) {
         this.cachedData = data;
         this.monthCache[cacheKey] = data;
+        if (!this.monthCacheTimestamps) this.monthCacheTimestamps = {};
+        this.monthCacheTimestamps[cacheKey] = Date.now();
+
         this.render();
         chrome.storage.local.set({
-          plato_calendar_months: this.monthCache
+          plato_calendar_months: this.monthCache,
+          plato_calendar_month_timestamps: this.monthCacheTimestamps
         });
+
+        // 이동한 월이 속한 학기의 나머지 월들도 백그라운드 동기화
+        this.syncSemesterMonthsInBackground();
       }
     } catch (err) {
       console.error('Failed to load month calendar:', err);
@@ -393,11 +410,14 @@ const PlatoCalendar = {
   },
 
   loadCachedData() {
-    chrome.storage.local.get(['plato_calendar_data', 'plato_calendar_months'], (res) => {
+    chrome.storage.local.get(['plato_calendar_data', 'plato_calendar_months', 'plato_calendar_month_timestamps'], (res) => {
       if (chrome.runtime.lastError) return;
 
       if (res.plato_calendar_months) {
         this.monthCache = res.plato_calendar_months;
+      }
+      if (res.plato_calendar_month_timestamps) {
+        this.monthCacheTimestamps = res.plato_calendar_month_timestamps;
       }
 
       const today = new Date();
@@ -424,6 +444,11 @@ const PlatoCalendar = {
   },
 
   handleManualRefresh() {
+    // 수동 새로고침 클릭 시 강좌 상태 및 캐시 타임스탬프를 초기화하여 전체 최신화
+    this.cachedStatusMap = null;
+    this.cachedNameStatusMap = null;
+    this.cachedCourses = null;
+    this.monthCacheTimestamps = {};
     this.fetchAndRefreshData();
   },
 
@@ -472,19 +497,82 @@ const PlatoCalendar = {
       if (data && data.activities) {
         this.cachedData = data;
         this.monthCache[`${this.viewYear}_${this.viewMonth}`] = data;
+        if (!this.monthCacheTimestamps) this.monthCacheTimestamps = {};
         const now = Date.now();
+        this.monthCacheTimestamps[`${this.viewYear}_${this.viewMonth}`] = now;
+
         chrome.storage.local.set({
           plato_calendar_data: data,
           plato_calendar_months: this.monthCache,
+          plato_calendar_month_timestamps: this.monthCacheTimestamps,
           plato_calendar_last_fetch: now
         });
         this.render();
       }
+
+      // 핵심 개선: 같은 학기(1학기: 3~6월, 2학기: 9~12월 등)에 해당하는 모든 월을 백그라운드에서 일괄 동기화
+      this.syncSemesterMonthsInBackground(statusMaps);
     } catch (e) {
       console.error('Failed to fetch plato calendar data:', e);
     } finally {
       this.setLoading(false);
       if (btn) btn.disabled = false;
+    }
+  },
+
+  getSemesterMonths(month) {
+    if (month >= 3 && month <= 6) {
+      return [3, 4, 5, 6]; // 1학기: 3월 ~ 6월
+    } else if (month >= 9 && month <= 12) {
+      return [9, 10, 11, 12]; // 2학기: 9월 ~ 12월
+    } else if (month >= 7 && month <= 8) {
+      return [7, 8]; // 여름계절/방학
+    } else {
+      return [1, 2]; // 겨울계절/방학
+    }
+  },
+
+  async syncSemesterMonthsInBackground(statusMaps) {
+    try {
+      const year = this.viewYear;
+      const targetMonths = this.getSemesterMonths(this.viewMonth);
+      // 현재 열려 있는 월은 이미 fetchAndRefreshData에서 완료되었으므로 제외한 나머지 학기 월들 대상
+      const otherMonths = targetMonths.filter(m => m !== this.viewMonth);
+
+      const maps = statusMaps || {
+        globalStatusMap: this.cachedStatusMap || {},
+        nameStatusMap: this.cachedNameStatusMap || {}
+      };
+
+      // 같은 학기의 다른 월들을 병렬로 조회하여 캐시 일괄 동기화
+      await Promise.all(otherMonths.map(async (m) => {
+        try {
+          const cacheKey = `${year}_${m}`;
+          const calDoc = await this.fetchCalendarDoc(year, m);
+          const data = this.parseCalendarDoc(calDoc, year, m, maps);
+
+          if (data && data.activities) {
+            this.monthCache[cacheKey] = data;
+            if (!this.monthCacheTimestamps) this.monthCacheTimestamps = {};
+            this.monthCacheTimestamps[cacheKey] = Date.now();
+
+            // 백그라운드 동기화 완료 시점에 사용자가 해당 월로 이동해 있다면 즉시 화면 갱신
+            if (this.viewYear === year && this.viewMonth === m) {
+              this.cachedData = data;
+              this.render();
+            }
+          }
+        } catch (err) {
+          console.warn(`Plato Calendar: month ${m} background sync failed:`, err);
+        }
+      }));
+
+      chrome.storage.local.set({
+        plato_calendar_months: this.monthCache,
+        plato_calendar_month_timestamps: this.monthCacheTimestamps
+      });
+    } catch (err) {
+      console.warn('Plato Calendar: semester months background sync failed:', err);
     }
   },
 
@@ -1107,6 +1195,7 @@ const BbitsCalendar = {
   viewYear: new Date().getFullYear(),
   viewMonth: new Date().getMonth() + 1,
   monthCache: {},
+  monthCacheTimestamps: {},
   cachedStatusMap: null,
   cachedNameStatusMap: null,
   cachedCourses: null,
@@ -1442,26 +1531,43 @@ const BbitsCalendar = {
     this.renderDetailPanel();
 
     const cacheKey = `${year}_${month}`;
-    if (this.monthCache[cacheKey]) {
+    const hasCache = !!this.monthCache[cacheKey];
+
+    if (hasCache) {
+      // 1. 캐시가 있으면 지연 없이 즉시 렌더링하여 빠른 화면 전환
       this.cachedData = this.monthCache[cacheKey];
       this.render();
-      return;
-    }
 
-    this.renderEmptyMonthGrid(year, month);
-    this.setLoading(true);
+      // 캐시가 최근 60초 이내에 갱신되었으면 불필요한 백그라운드 재요청 생략
+      const lastFetch = this.monthCacheTimestamps?.[cacheKey] || 0;
+      if (Date.now() - lastFetch < 60000) {
+        return;
+      }
+    } else {
+      // 2. 캐시가 아직 없으면 해당 월의 기본 날짜 그리드를 즉시 렌더링하고 로딩 오버레이 표시
+      this.renderEmptyMonthGrid(year, month);
+      this.setLoading(true);
+    }
 
     const reqId = ++this.navRequestId;
 
     try {
+      // 백그라운드 최신 데이터 동기화 (Stale-While-Revalidate: 캐시가 있어도 최신 과제 확인)
       const data = await this.fetchMonthCalendar(year, month);
       if (reqId === this.navRequestId && data) {
         this.cachedData = data;
         this.monthCache[cacheKey] = data;
+        if (!this.monthCacheTimestamps) this.monthCacheTimestamps = {};
+        this.monthCacheTimestamps[cacheKey] = Date.now();
+
         this.render();
         chrome.storage.local.set({
-          bbits_calendar_months: this.monthCache
+          bbits_calendar_months: this.monthCache,
+          bbits_calendar_month_timestamps: this.monthCacheTimestamps
         });
+
+        // 이동한 월이 속한 학기의 나머지 월들도 백그라운드 동기화
+        this.syncSemesterMonthsInBackground();
       }
     } catch (err) {
       console.error('Failed to load bbits month calendar:', err);
@@ -1493,11 +1599,14 @@ const BbitsCalendar = {
   },
 
   loadCachedData() {
-    chrome.storage.local.get(['bbits_calendar_data', 'bbits_calendar_months'], (res) => {
+    chrome.storage.local.get(['bbits_calendar_data', 'bbits_calendar_months', 'bbits_calendar_month_timestamps'], (res) => {
       if (chrome.runtime.lastError) return;
 
       if (res.bbits_calendar_months) {
         this.monthCache = res.bbits_calendar_months;
+      }
+      if (res.bbits_calendar_month_timestamps) {
+        this.monthCacheTimestamps = res.bbits_calendar_month_timestamps;
       }
 
       const today = new Date();
@@ -1521,6 +1630,11 @@ const BbitsCalendar = {
   },
 
   handleManualRefresh() {
+    // 수동 새로고침 클릭 시 강좌 상태 및 캐시 타임스탬프를 초기화하여 전체 최신화
+    this.cachedStatusMap = null;
+    this.cachedNameStatusMap = null;
+    this.cachedCourses = null;
+    this.monthCacheTimestamps = {};
     this.fetchAndRefreshData();
   },
 
@@ -1565,19 +1679,79 @@ const BbitsCalendar = {
       if (data && data.activities) {
         this.cachedData = data;
         this.monthCache[`${this.viewYear}_${this.viewMonth}`] = data;
+        if (!this.monthCacheTimestamps) this.monthCacheTimestamps = {};
         const now = Date.now();
+        this.monthCacheTimestamps[`${this.viewYear}_${this.viewMonth}`] = now;
+
         chrome.storage.local.set({
           bbits_calendar_data: data,
           bbits_calendar_months: this.monthCache,
+          bbits_calendar_month_timestamps: this.monthCacheTimestamps,
           bbits_calendar_last_fetch: now
         });
         this.render();
       }
+
+      // 핵심 개선: 같은 학기(1학기: 3~6월, 2학기: 9~12월 등)에 해당하는 모든 월을 백그라운드에서 일괄 동기화
+      this.syncSemesterMonthsInBackground(statusMaps);
     } catch (e) {
       console.error('Failed to fetch bbits calendar data:', e);
     } finally {
       this.setLoading(false);
       if (btn) btn.disabled = false;
+    }
+  },
+
+  getSemesterMonths(month) {
+    if (month >= 3 && month <= 6) {
+      return [3, 4, 5, 6]; // 1학기: 3월 ~ 6월
+    } else if (month >= 9 && month <= 12) {
+      return [9, 10, 11, 12]; // 2학기: 9월 ~ 12월
+    } else if (month >= 7 && month <= 8) {
+      return [7, 8]; // 여름계절/방학
+    } else {
+      return [1, 2]; // 겨울계절/방학
+    }
+  },
+
+  async syncSemesterMonthsInBackground(statusMaps) {
+    try {
+      const year = this.viewYear;
+      const targetMonths = this.getSemesterMonths(this.viewMonth);
+      const otherMonths = targetMonths.filter(m => m !== this.viewMonth);
+
+      const maps = statusMaps || {
+        globalStatusMap: this.cachedStatusMap || {},
+        nameStatusMap: this.cachedNameStatusMap || {}
+      };
+
+      await Promise.all(otherMonths.map(async (m) => {
+        try {
+          const cacheKey = `${year}_${m}`;
+          const calDoc = await this.fetchCalendarDoc(year, m);
+          const data = this.parseCalendarDoc(calDoc, year, m, maps);
+
+          if (data && data.activities) {
+            this.monthCache[cacheKey] = data;
+            if (!this.monthCacheTimestamps) this.monthCacheTimestamps = {};
+            this.monthCacheTimestamps[cacheKey] = Date.now();
+
+            if (this.viewYear === year && this.viewMonth === m) {
+              this.cachedData = data;
+              this.render();
+            }
+          }
+        } catch (err) {
+          console.warn(`BBITS Calendar: month ${m} background sync failed:`, err);
+        }
+      }));
+
+      chrome.storage.local.set({
+        bbits_calendar_months: this.monthCache,
+        bbits_calendar_month_timestamps: this.monthCacheTimestamps
+      });
+    } catch (err) {
+      console.warn('BBITS Calendar: semester months background sync failed:', err);
     }
   },
 
