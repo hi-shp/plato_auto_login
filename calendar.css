@@ -827,3 +827,24 @@
   }
 }
 
+@media (max-width: 480px) {
+  .plato-large-days-grid {
+    gap: 4px;
+  }
+
+  .plato-large-day-cell {
+    padding: 4px 3px;
+  }
+
+  .plato-day-num {
+    width: 21px;
+    height: 21px;
+    font-size: 13px;
+  }
+
+  .plato-day-badge {
+    padding: 1px 4px;
+    font-size: 10px;
+  }
+}
+

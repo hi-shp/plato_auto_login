@@ -12,13 +12,15 @@
 | `favicon.png` | 팝업 액션과 확장 아이콘. |
 | `images/` | README 설명용 이미지. 확장 실행에는 필요 없음. |
 | `scripts/release.py` | 정적 검증과 참조 파일 기반 ZIP 생성·검증. |
+| `scripts/verify.py` | 정적 검사, 단위·브라우저 회귀 검사와 선택적 ZIP 생성의 릴리스 품질 게이트. |
+| `requirements-test.txt` | Chrome E2E 실행용 Python 패키지. 배포 ZIP에서는 제외. |
 | `tests/unit/`, `tests/fixtures/`, `tests/e2e/` | 시각·이동 단위 테스트, 익명화된 로컬 재현 페이지, Selenium Chrome 브라우저 테스트. 배포 ZIP에서는 제외. |
 | `TESTING.md` | 실제 사이트에서 확인한 범위와 모의 테스트 결과·한계. |
 | `dist/` | 로컬 웹스토어 제출 ZIP. Git 제외. |
 | `.agents/rules/git-backup.md`, `AGENTS.md` | 로컬 전용 에이전트 작업 규칙. Git 제외. |
 | `사진/`, `plato.zip` | 기존 작업 자료와 이전 ZIP. 새 배포 ZIP에는 포함하지 않음. |
 
-릴리스 도구는 `node --check`로 JavaScript 구문을 검사합니다. `node --test` 단위 테스트와 Selenium 브라우저 테스트를 별도로 실행할 수 있습니다.
+릴리스 도구는 `node --check`로 JavaScript 구문을 검사합니다. `python scripts/verify.py`는 단위 테스트와 Selenium 브라우저 테스트를 함께 실행합니다. Chrome E2E는 임시 프로필에 테스트용 확장 프로그램을 WebDriver BiDi로 설치하고 로컬 LMS Fixture에서 실행합니다.
 
 ## 주요 호출 흐름
 
@@ -32,7 +34,7 @@
 
 `PlatoCalendar`와 `BbitsCalendar`는 각각 `init` → `mountWidgetSkeleton` → `loadCachedData` → `fetchAndRefreshData` → `fetchCourseStatuses`/`fetchCalendarDoc` → `parseCalendarDoc` → `render` 순서로 동작합니다. 해당 사이트의 최상위 프레임과 대상 페이지인지 확인하고 위젯 ID로 중복 삽입을 막습니다. 토글 변경은 `chrome.storage.onChanged`로 반영합니다. 월 이동은 먼저 캐시를 표시하고 60초가 지난 월은 백그라운드에서 재조회하며, `navRequestId`로 오래된 응답의 화면 반영을 막습니다. 같은 학기의 다른 월도 병렬 조회합니다. 요청은 8초 제한과 `credentials: same-origin`을 사용합니다. 실패하면 기존 화면을 유지하고 콘솔에 오류를 남깁니다.
 
-PLATO는 정규 교과과정, 강좌 활동/과제, Moodle 월간 달력 HTML과 해당 월 활동 상세 페이지의 종료 시각을 파싱합니다. BBITS는 LMS 강좌 VOD의 초 단위 기간과 과제 목록의 분 단위 마감 및 월간 달력을 파싱합니다. `CalendarTime`은 확인된 시각을 서울 시간의 ISO 타임스탬프로 저장하고 날짜별 배치·기한 경과·표시를 계산합니다. 이전 캐시의 날짜만 있는 일정은 시각을 추정하지 않고 `마감 시각 확인 불가`로 표시한 뒤 접속 시 재조회합니다. 완료 항목은 상세 카드에 D-Day 배지를 만들지 않습니다. `calendar.css`의 일부 클래스 선택자는 위젯 ID 밖에서도 일치할 수 있으므로 사이트 DOM 변경 시 충돌을 확인해야 합니다.
+`render()`는 캐시의 월별 날짜 배열을 먼저 보정하고, `CalendarTime`이 로드된 경우에 시각·상태 정보를 갱신합니다. 이전 manifest를 유지한 브라우저에서 새 `content.js`를 읽어도 기본 날짜와 캐시 일정이 남습니다. PLATO는 정규 교과과정, 강좌 활동/과제, Moodle 월간 달력 HTML과 해당 월 활동 상세 페이지의 종료 시각을 파싱합니다. BBITS는 LMS 강좌 VOD의 초 단위 기간과 과제 목록의 분 단위 마감 및 월간 달력을 파싱합니다. `CalendarTime`은 확인된 시각을 서울 시간의 ISO 타임스탬프로 저장하고 날짜별 배치·기한 경과·표시를 계산합니다. 이전 캐시의 날짜만 있는 일정은 시각을 추정하지 않고 `마감 시각 확인 불가`로 표시한 뒤 접속 시 재조회합니다. 완료 항목은 상세 카드에 D-Day 배지를 만들지 않습니다. `calendar.css`의 일부 클래스 선택자는 위젯 ID 밖에서도 일치할 수 있으므로 사이트 DOM 변경 시 충돌을 확인해야 합니다.
 
 | 저장소 키 | 용도 |
 | --- | --- |

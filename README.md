@@ -17,6 +17,10 @@
 
 ## 2. 업데이트 내역
 
+* **v2026.10.12.1**:
+    * PLATO와 부산공유대학에서 보조 스크립트 로딩이 어긋나도 월간 날짜가 사라지지 않도록 복구했습니다.
+    * 손상된 날짜 캐시와 일정 수집 실패 시에도 기본 날짜를 유지하고, 좁은 화면에서 일정 건수 배지가 잘리지 않도록 조정했습니다.
+    * 실제 Chrome에 확장 프로그램을 설치해 두 캘린더와 기존 기능을 검사하는 릴리스 검증 명령을 추가했습니다.
 * **v2026.10.12**:
     * PLATO 홈 공지에서 확인된 ‘더 이상 보지 않음’ 버튼을 사이트의 공식 동작으로 처리하고, 과제·파일 선택 등 작업 대화상자가 자동으로 닫히지 않도록 범위를 제한했습니다.
     * 세션 만료 후 자동 로그인 시 교과과정으로 이동하도록 보완하고, 교과과정에서 직접 누른 ‘홈’ 이동은 유지했습니다.
@@ -105,20 +109,17 @@
 
 ## 6. 개발 및 배포
 
-프로젝트 구조와 저장 키는 [PROJECT_STRUCTURE.md](./PROJECT_STRUCTURE.md)를 참고하세요. Python 3와 Node.js가 필요하며, 릴리스 도구에 별도의 Python 패키지는 필요하지 않습니다.
+프로젝트 구조와 저장 키는 [PROJECT_STRUCTURE.md](./PROJECT_STRUCTURE.md)를 참고하세요. Python 3와 Node.js가 필요하며, 릴리스 도구에는 별도의 Python 패키지가 필요하지 않습니다. 전체 브라우저 검증에는 Chrome과 Selenium이 필요합니다.
 
 ```powershell
-python scripts/release.py --check
-node --test tests/unit/calendar-time.test.js tests/unit/login-navigation.test.js
-python -m unittest discover -s tests -p 'test_release.py' -v
-# Chrome과 Selenium 설치 시 로컬 브라우저 테스트:
-python -m unittest discover -s tests/e2e -p 'test_*.py' -v
-python scripts/release.py
+python -m pip install -r requirements-test.txt
+python scripts/verify.py
+# 검증 통과 후 manifest와 README 버전을 갱신한 다음:
+python scripts/verify.py --package
 python scripts/release.py --verify
-git diff --check
 ```
 
-`python scripts/release.py` 한 번으로 소스 검사, 리소스 수집, `dist/plato_auto_login_v[버전].zip` 생성 및 압축 검증을 수행합니다. 같은 버전의 ZIP이 이미 있으면 현재 소스와 일치할 때만 재사용합니다. 소스가 바뀌면 `manifest.json` 버전과 README 최상단 업데이트 내역을 먼저 갱신하세요. 버전은 서울 날짜 기준이며 같은 날 추가 릴리스에는 네 번째 숫자를 붙입니다.
+`python scripts/verify.py`는 정적 검사, 단위 테스트, 두 사이트의 실제 확장 프로그램 Chrome E2E, Git 공백 검사를 집계합니다. `--package`를 붙이면 필수 테스트가 모두 통과한 후 `dist/plato_auto_login_v[버전].zip`을 만들고 검증합니다. 같은 버전의 ZIP은 현재 소스와 일치할 때만 재사용합니다. 버전은 서울 날짜 기준이며 같은 날 추가 릴리스에는 네 번째 숫자를 붙입니다.
 
 ZIP에는 확장 프로그램이 참조하는 실행 파일만 들어갑니다. `dist/`와 에이전트 지침 파일은 Git에서 제외됩니다. 검증 후 변경 파일을 검토하여 커밋하고 `origin/main`에 푸시합니다. 웹스토어 업로드와 게시, 실제 로그인 확인은 별도 수동 작업입니다.
 

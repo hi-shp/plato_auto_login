@@ -1,3 +1,45 @@
+const ensureMonthGridData = (data, fallbackYear, fallbackMonth) => {
+  const now = new Date();
+  const year = Number.isInteger(data.curYear) && data.curYear >= 1900 && data.curYear <= 9999
+    ? data.curYear : fallbackYear || now.getFullYear();
+  const month = Number.isInteger(data.curMonth) && data.curMonth >= 1 && data.curMonth <= 12
+    ? data.curMonth : fallbackMonth || now.getMonth() + 1;
+  const totalDays = new Date(year, month, 0).getDate();
+  const existing = new Map();
+  if (Array.isArray(data.days)) {
+    data.days.forEach(day => {
+      if (day && Number.isInteger(day.day) && day.day >= 1 && day.day <= totalDays && !existing.has(day.day)) {
+        existing.set(day.day, day);
+      }
+    });
+  }
+  data.curYear = year;
+  data.curMonth = month;
+  data.days = Array.from({ length: totalDays }, (_, index) => {
+    const day = index + 1;
+    const date = new Date(year, month - 1, day);
+    const cached = existing.get(day) || {};
+    return { ...cached, day,
+      isToday: year === now.getFullYear() && month === now.getMonth() + 1 && day === now.getDate(),
+      isWeekend: date.getDay() === 0 || date.getDay() === 6,
+      events: Array.isArray(cached.events) ? cached.events : [] };
+  });
+  data.activities = Array.isArray(data.activities) ? data.activities.filter(item => item && typeof item === 'object') : [];
+  data.dayDueActivitiesMap = Object.fromEntries(
+    Object.entries(data.dayDueActivitiesMap && typeof data.dayDueActivitiesMap === 'object' ? data.dayDueActivitiesMap : {})
+      .filter(([day, items]) => Number(day) >= 1 && Number(day) <= totalDays && Array.isArray(items))
+      .map(([day, items]) => [day, items.filter(item => item && typeof item === 'object')])
+  );
+  return data;
+};
+
+const compareCachedActivity = (a, b) => {
+  if (typeof CalendarTime !== 'undefined') return CalendarTime.compare(a, b);
+  const rank = { pending: 1, passed: 2, done: 3 };
+  return (rank[a.statusType] || 4) - (rank[b.statusType] || 4) ||
+    (a.dueDay || 0) - (b.dueDay || 0) || (a.title || '').localeCompare(b.title || '');
+};
+
 /* ==========================================================================
    PLATO CLEAN CALENDAR & DASHBOARD ENGINE (MINIMALIST & FIXED GRID)
    ========================================================================== */
@@ -1030,7 +1072,8 @@ const PlatoCalendar = {
 
   render() {
     if (!this.cachedData) return;
-    CalendarTime.refreshData(this.cachedData);
+    ensureMonthGridData(this.cachedData, this.viewYear, this.viewMonth);
+    if (typeof CalendarTime !== 'undefined') CalendarTime.refreshData(this.cachedData);
     const { curYear, curMonth, days } = this.cachedData;
 
     const yearEl = document.querySelector('#plato-cal-year-text');
@@ -1208,7 +1251,7 @@ const PlatoCalendar = {
     if (!this.cachedData) return;
 
     const rawItems = (this.cachedData.activities || []).filter(a => a.dueDay === this.selectedDay);
-    const items = rawItems.slice().sort(CalendarTime.compare);
+    const items = rawItems.slice().sort(compareCachedActivity);
     const curYear = this.cachedData.curYear;
     const curMonth = this.cachedData.curMonth;
     const d = new Date(curYear, curMonth - 1, this.selectedDay);
@@ -2239,7 +2282,8 @@ const BbitsCalendar = {
 
   render() {
     if (!this.cachedData) return;
-    CalendarTime.refreshData(this.cachedData);
+    ensureMonthGridData(this.cachedData, this.viewYear, this.viewMonth);
+    if (typeof CalendarTime !== 'undefined') CalendarTime.refreshData(this.cachedData);
     const { curYear, curMonth, days } = this.cachedData;
 
     const yearEl = document.querySelector('#bbits-cal-year-text');
@@ -2414,7 +2458,7 @@ const BbitsCalendar = {
     if (!this.cachedData) return;
 
     const rawItems = (this.cachedData.activities || []).filter(a => a.dueDay === this.selectedDay);
-    const items = rawItems.slice().sort(CalendarTime.compare);
+    const items = rawItems.slice().sort(compareCachedActivity);
     const curYear = this.cachedData.curYear;
     const curMonth = this.cachedData.curMonth;
     const d = new Date(curYear, curMonth - 1, this.selectedDay);

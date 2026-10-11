@@ -1,0 +1,2 @@
+selenium>=4.26,<5
+websocket-client>=1.8,<2

@@ -150,6 +150,22 @@ class FixtureBrowserTest(unittest.TestCase):
         """)
         self.assertIn("23:59", result)
 
+    def test_both_full_month_grids_render_without_cache(self):
+        self.open_fixture("calendar-lab.html")
+        result = self.browser.execute_script("""
+            const target = document.createElement('div');
+            target.id = 'region-main';
+            document.body.append(target);
+            chrome.storage = {local:{get:(_,callback)=>callback({}),set:()=>{}}};
+            PlatoCalendar.mountWidgetSkeleton();
+            PlatoCalendar.renderEmptyMonthGrid(2026,10);
+            BbitsCalendar.mountWidgetSkeleton();
+            BbitsCalendar.renderEmptyMonthGrid(2026,10);
+            return ['plato','bbits'].map(site =>
+                document.querySelectorAll(`#${site}-large-days-grid .plato-large-day-cell:not(.empty)`).length);
+        """)
+        self.assertEqual(result, [31, 31])
+
 
 if __name__ == "__main__":
     unittest.main()
