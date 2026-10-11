@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="ko">
+<head><meta charset="utf-8"><title>캘린더 파서 테스트</title><link rel="stylesheet" href="../../calendar.css"><style>#plato-source,#bbits-source{display:none}</style></head>
+<body>
+  <table id="plato-source"><tr><td class="day" data-day="12"><span class="day-number">12</span><ul>
+    <li data-region="event-item" data-event-component="mod_assign"><a href="https://plato.pusan.ac.kr/mod/assign/view.php?id=1001">가상 과제 1 기한</a></li>
+    <li data-region="event-item" data-event-component="mod_assign"><a href="https://plato.pusan.ac.kr/mod/assign/view.php?id=1002">가상 과제 2 기한</a></li>
+    <li data-region="event-item" data-event-component="mod_assign"><a href="https://plato.pusan.ac.kr/mod/assign/view.php?id=1003">가상 완료 과제 기한</a></li>
+  </ul></td></tr></table>
+  <table id="bbits-source"><tr><td class="day"><span class="day">12</span><ul class="events-new"></ul></td></tr></table>
+  <div id="plato-calendar-detail-panel"><span id="plato-detail-title-text"></span><button id="plato-detail-close-btn"></button><div id="plato-detail-cards-grid"></div></div>
+  <div id="bbits-calendar-detail-panel"><span id="bbits-detail-title-text"></span><button id="bbits-detail-close-btn"></button><div id="bbits-detail-cards-grid"></div></div>
+  <script>window.chrome = {runtime: {id: null}};</script>
+  <script src="../../calendar-time.js"></script><script src="../../notice.js"></script><script src="../../content.js"></script>
+  <script>
+    window.runCalendarFixture = () => {
+      const times = ['2026-10-12 23:55', '2026-10-12 23:59:59', '2026-10-12 23:59'];
+      const platoStatus = { globalStatusMap: {}, timeMap: {} };
+      const bbitsStatus = { globalStatusMap: {} };
+      times.forEach((text, index) => {
+        const id = String(1001 + index);
+        const due = CalendarTime.parse(text);
+        const common = { modId: id, name: `가상 과제 ${index + 1}`, courseName: '테스트 강좌',
+          href: `https://plato.pusan.ac.kr/mod/assign/view.php?id=${id}`,
+          isCompleted: index === 2, parsedPeriod: '10월 12일',
+          dueAt: due.at, dueYear: due.year, dueMonth: due.month, dueDay: due.day,
+          timePrecision: due.precision, type: '과제' };
+        platoStatus.globalStatusMap[id] = common;
+        platoStatus.timeMap[id] = { dueAt: due.at, dueYear: due.year, dueMonth: due.month,
+          dueDay: due.day, timePrecision: due.precision };
+        bbitsStatus.globalStatusMap[id] = common;
+      });
+      const plato = PlatoCalendar.parseCalendarDoc(document.querySelector('#plato-source'), 2026, 10, platoStatus);
+      const bbits = BbitsCalendar.parseCalendarDoc(document.querySelector('#bbits-source'), 2026, 10, bbitsStatus);
+      PlatoCalendar.cachedData = plato; PlatoCalendar.selectedDay = 12; PlatoCalendar.renderDetailPanel();
+      BbitsCalendar.cachedData = bbits; BbitsCalendar.selectedDay = 12; BbitsCalendar.renderDetailPanel();
+      const summarize = (data, grid) => ({
+        due: data.dayDueActivitiesMap[12]?.map(a => a.dueAt),
+        badges: grid.querySelectorAll('.plato-task-dday').length,
+        periods: [...grid.querySelectorAll('.plato-task-period')].map(el => el.textContent.trim()),
+        completed: grid.querySelectorAll('.badge-done').length
+      });
+      return { plato: summarize(plato, document.querySelector('#plato-detail-cards-grid')),
+        bbits: summarize(bbits, document.querySelector('#bbits-detail-cards-grid')) };
+    };
+  </script>
+</body>
+</html>

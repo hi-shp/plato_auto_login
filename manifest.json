@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "부산대학교 자동 로그인",
-  "version": "2026.10.11",
+  "version": "2026.10.12",
   "description": "PLATO & 학지시 & 공유대학 자동 로그인 프로그램",
   "permissions": ["storage"],
   "host_permissions": [
@@ -29,7 +29,7 @@
         "https://www.bbits.ac.kr/*",
         "https://lms.bbits.ac.kr/*"
       ],
-      "js": ["content.js"],
+      "js": ["calendar-time.js", "notice.js", "content.js"],
       "css": ["calendar.css"],
       "run_at": "document_end",
       "all_frames": true

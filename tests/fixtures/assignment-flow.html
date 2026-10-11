@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8"><title>과제 제출 모의 흐름</title>
+  <style>body{font:15px sans-serif;max-width:700px;margin:30px auto}.modal{border:2px solid #64748b;padding:16px;margin:16px 0}button{padding:7px;margin:5px}</style>
+</head>
+<body>
+  <h1>과제 제출 모의 흐름</h1>
+  <p>실제 PLATO 과제의 편집·파일 선택·저장·최종 제출 단계를 재현합니다. 실제 LMS에 연결하지 않습니다.</p>
+  <p id="state">미제출</p><p id="calendar">캘린더: 미완료</p>
+  <button id="start">과제 제출</button><button id="reset">Reset</button>
+  <div id="stage"></div>
+  <script src="../../notice.js"></script>
+  <script>
+    const stage = document.querySelector('#stage');
+    const state = document.querySelector('#state');
+    const calendar = document.querySelector('#calendar');
+    const record = [];
+    const setState = (text, completed) => {
+      state.textContent = text; calendar.textContent = `캘린더: ${completed ? '완료' : '미완료'}`;
+      record.push(text);
+    };
+    document.querySelector('#start').onclick = () => {
+      stage.innerHTML = '<div id="editor"><p>제출 파일 편집</p><button id="attach">파일 첨부</button><button id="save">변경사항 저장</button><button id="cancel">취소</button></div>';
+      document.querySelector('#attach').onclick = () => {
+        const picker = document.createElement('div');
+        picker.className = 'modal show filepicker'; picker.setAttribute('role', 'dialog');
+        picker.innerHTML = '<p>파일 선택</p><input id="file" type="file"><button id="picker-close" class="btn-close" data-bs-dismiss="modal">닫기</button>';
+        stage.append(picker);
+        document.querySelector('#picker-close').onclick = () => picker.remove();
+      };
+      document.querySelector('#save').onclick = () => {
+        const file = document.querySelector('#file')?.files?.[0];
+        if (!file) { setState('파일 없음', false); return; }
+        stage.innerHTML = `<p id="saved-file"></p><button id="final">최종 제출</button>`;
+        document.querySelector('#saved-file').textContent = file.name;
+        setState('임시 저장', false);
+        document.querySelector('#final').onclick = () => {
+          const confirmation = document.createElement('div');
+          confirmation.className = 'modal show'; confirmation.setAttribute('role', 'alertdialog');
+          confirmation.innerHTML = '<p>최종 제출하시겠습니까?</p><button id="confirm">확인</button><button id="dismiss" class="btn-close" data-bs-dismiss="modal">닫기</button>';
+          stage.append(confirmation);
+          document.querySelector('#dismiss').onclick = () => confirmation.remove();
+          document.querySelector('#confirm').onclick = () => { stage.replaceChildren(); setState('제출 완료', true); };
+        };
+      };
+      document.querySelector('#cancel').onclick = () => stage.replaceChildren();
+    };
+    document.querySelector('#reset').onclick = () => { stage.replaceChildren(); setState('미제출', false); record.length = 0; };
+    window.assignmentState = () => ({ state: state.textContent, calendar: calendar.textContent, record: [...record] });
+  </script>
+</body>
+</html>

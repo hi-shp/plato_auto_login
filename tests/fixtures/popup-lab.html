@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <title>PLATO 팝업 재현 실험실</title>
+  <style>
+    body { font: 15px/1.5 sans-serif; max-width: 900px; margin: 24px auto; }
+    button { margin: 4px; padding: 5px 9px; }
+    .modal, .moodle-dialogue { border: 2px solid #64748b; padding: 14px; margin: 12px 0; }
+    .modal-ubboard-notice { border-color: #2563eb; }
+    .splide__slide, .popup-footer { margin: 8px 0; }
+    #log { white-space: pre-wrap; border: 1px solid #ddd; padding: 10px; min-height: 80px; }
+  </style>
+</head>
+<body>
+  <h1>PLATO 팝업 재현 실험실</h1>
+  <p>실제 홈 공지의 선택자와 버튼 구성을 익명화해 재현합니다. 이 페이지는 실제 LMS에 요청하지 않습니다.</p>
+  <label><input id="enabled" type="checkbox" checked> 공지 자동 처리</label>
+  <div>
+    <button id="notice" type="button">공지 생성</button>
+    <button id="notices" type="button">공지 두 개 생성</button>
+    <button id="dynamic" type="button">지연 공지 생성</button>
+    <button id="close-only" type="button">닫기만 있는 공지</button>
+    <button id="assignment" type="button">과제 제출 확인창</button>
+    <button id="upload" type="button">파일 업로드창</button>
+    <button id="session" type="button">세션 만료창</button>
+    <button id="login" type="button">로그인 폼</button>
+    <button id="nested" type="button">공지와 확인창 중첩</button>
+    <button id="run" type="button">자동 처리 실행</button>
+    <button id="reset" type="button">Reset</button>
+  </div>
+  <div id="stage"></div>
+  <h2>클릭 기록</h2><div id="log"></div>
+  <script src="../../notice.js"></script>
+  <script>
+    (() => {
+      const stage = document.querySelector('#stage');
+      const log = document.querySelector('#log');
+      const counts = { permanent: 0, close: 0, confirm: 0, upload: 0, session: 0 };
+      let enabled = true;
+      let nextId = 0;
+      let timer = null;
+      const record = kind => {
+        counts[kind]++;
+        log.textContent += `${kind}\n`;
+        localStorage.setItem('fixture_log', log.textContent);
+      };
+      const notice = (permanent = true) => {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'modal modal-ubboard-notice show';
+        wrapper.setAttribute('role', 'dialog');
+        wrapper.dataset.fixtureId = String(++nextId);
+        wrapper.innerHTML = `<div id="popup-splide"><div class="splide__slide"><p>익명화된 학사 공지</p>
+          <button class="btn-close" data-bs-dismiss="modal" type="button">닫기</button></div>
+          <div class="popup-footer"><div class="view-options">
+          <button class="btn-not-show-again" data-not-show-type="1" type="button">오늘 하루 그만 보기</button>
+          ${permanent ? '<button class="btn-not-show-again" data-not-show-type="2" type="button">더 이상 보지 않음</button>' : ''}
+          </div></div></div>`;
+        wrapper.querySelector('[data-not-show-type="1"]').addEventListener('click', () => record('today'));
+        wrapper.querySelector('[data-not-show-type="2"]')?.addEventListener('click', () => {
+          record('permanent'); localStorage.setItem('fixture_notice_hidden', '1'); wrapper.remove();
+        });
+        wrapper.querySelector('.btn-close').addEventListener('click', () => { record('close'); wrapper.remove(); });
+        stage.append(wrapper);
+        return wrapper;
+      };
+      const dialog = (kind, label) => {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'modal show';
+        wrapper.setAttribute('role', 'dialog');
+        wrapper.innerHTML = `<strong>${label}</strong><form><button class="btn-close" data-bs-dismiss="modal" type="button">닫기</button>
+          ${kind === 'upload' ? '<input type="file">' : ''}<button type="button" class="confirm">확인</button></form>`;
+        wrapper.querySelector('.btn-close').addEventListener('click', () => { record(kind); wrapper.remove(); });
+        wrapper.querySelector('.confirm').addEventListener('click', () => record('confirm'));
+        stage.append(wrapper);
+        return wrapper;
+      };
+      document.querySelector('#enabled').addEventListener('change', e => { enabled = e.target.checked; });
+      document.querySelector('#notice').onclick = () => notice();
+      document.querySelector('#notices').onclick = () => { notice(); notice(); };
+      document.querySelector('#dynamic').onclick = () => { timer = setTimeout(() => { notice(); PlatoNotice.handle(enabled); }, 80); };
+      document.querySelector('#close-only').onclick = () => notice(false);
+      document.querySelector('#assignment').onclick = () => dialog('assignment', '과제 제출 확인');
+      document.querySelector('#upload').onclick = () => dialog('upload', '파일 선택');
+      document.querySelector('#session').onclick = () => dialog('session', '세션 만료 - 다시 로그인');
+      document.querySelector('#login').onclick = () => dialog('login', '로그인 폼');
+      document.querySelector('#nested').onclick = () => { notice(); dialog('assignment', '최종 제출 확인'); };
+      document.querySelector('#run').onclick = () => PlatoNotice.handle(enabled);
+      document.querySelector('#reset').onclick = () => {
+        if (timer) clearTimeout(timer);
+        stage.replaceChildren(); log.textContent = ''; nextId = 0;
+        Object.keys(counts).forEach(key => counts[key] = 0);
+        localStorage.removeItem('fixture_log'); localStorage.removeItem('fixture_notice_hidden');
+        sessionStorage.removeItem('fixture_state');
+        document.cookie = 'fixture_notice=; Max-Age=0; path=/';
+        document.querySelector('#enabled').checked = true; enabled = true;
+      };
+      window.fixtureState = () => ({ ...counts, today: (log.textContent.match(/today/g) || []).length,
+        notices: stage.querySelectorAll('.modal-ubboard-notice').length,
+        dialogs: stage.querySelectorAll('.modal:not(.modal-ubboard-notice)').length,
+        log: log.textContent });
+    })();
+  </script>
+</body>
+</html>

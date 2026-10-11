@@ -12,6 +12,7 @@ const PlatoCalendar = {
   cachedNameStatusMap: null,
   cachedCourses: null,
   navRequestId: 0,
+  timeCache: {},
 
   WEEKDAYS_KO: ['일', '월', '화', '수', '목', '금', '토'],
 
@@ -351,7 +352,7 @@ const PlatoCalendar = {
 
       // 캐시가 최근 60초 이내에 갱신되었으면 불필요한 백그라운드 재요청 생략
       const lastFetch = this.monthCacheTimestamps?.[cacheKey] || 0;
-      if (Date.now() - lastFetch < 60000) {
+      if (Date.now() - lastFetch < 60000 && this.cachedData.timeEnriched) {
         return;
       }
     } else {
@@ -447,6 +448,7 @@ const PlatoCalendar = {
     // 수동 새로고침 클릭 시 강좌 상태 및 캐시 타임스탬프를 초기화하여 전체 최신화
     this.cachedStatusMap = null;
     this.cachedNameStatusMap = null;
+    this.timeCache = {};
     this.cachedCourses = null;
     this.monthCacheTimestamps = {};
     this.fetchAndRefreshData();
@@ -493,8 +495,11 @@ const PlatoCalendar = {
         this.fetchCalendarDoc(this.viewYear, this.viewMonth)
       ]);
 
+      statusMaps.timeMap = await this.fetchPreciseTimes(calDoc, statusMaps, this.viewYear, this.viewMonth);
+
       const data = this.parseCalendarDoc(calDoc, this.viewYear, this.viewMonth, statusMaps);
       if (data && data.activities) {
+        data.timeEnriched = true;
         this.cachedData = data;
         this.monthCache[`${this.viewYear}_${this.viewMonth}`] = data;
         if (!this.monthCacheTimestamps) this.monthCacheTimestamps = {};
@@ -549,9 +554,10 @@ const PlatoCalendar = {
         try {
           const cacheKey = `${year}_${m}`;
           const calDoc = await this.fetchCalendarDoc(year, m);
-          const data = this.parseCalendarDoc(calDoc, year, m, maps);
+          const data = this.parseCalendarDoc(calDoc, year, m, { ...maps, timeMap: this.timeCache });
 
           if (data && data.activities) {
+            data.timeEnriched = false;
             this.monthCache[cacheKey] = data;
             if (!this.monthCacheTimestamps) this.monthCacheTimestamps = {};
             this.monthCacheTimestamps[cacheKey] = Date.now();
@@ -676,9 +682,12 @@ const PlatoCalendar = {
                 const isCompleted = this.checkIsCompleted(tr.innerText, tr);
                 let parsedPeriod = '';
                 const text = tr.innerText;
+                const tableDue = CalendarTime.parseAll(text).at(-1) || CalendarTime.parse(text);
                 const rangeMatch = text.match(/(\d{1,2})[./월]\s*(\d{1,2})일?\s*~\s*(\d{1,2})[./월]\s*(\d{1,2})일?/);
                 if (rangeMatch) {
                   parsedPeriod = `${parseInt(rangeMatch[1])}월 ${parseInt(rangeMatch[2])}일 ~ ${parseInt(rangeMatch[3])}월 ${parseInt(rangeMatch[4])}일`;
+                } else if (tableDue) {
+                  parsedPeriod = `${tableDue.month}월 ${tableDue.day}일`;
                 }
 
                 if (!info.items[modId]) {
@@ -688,12 +697,20 @@ const PlatoCalendar = {
                     href: link.href,
                     courseName: c.name,
                     isCompleted,
-                    parsedPeriod
+                    parsedPeriod,
+                    dueAt: tableDue?.at || null,
+                    timePrecision: tableDue?.precision || null,
+                    originalDueText: tableDue?.original || ''
                   };
                 } else {
                   info.items[modId].isCompleted = isCompleted;
                   if (parsedPeriod && !info.items[modId].parsedPeriod) {
                     info.items[modId].parsedPeriod = parsedPeriod;
+                  }
+                  if (tableDue) {
+                    info.items[modId].dueAt = tableDue.at;
+                    info.items[modId].timePrecision = tableDue.precision;
+                    info.items[modId].originalDueText = tableDue.original;
                   }
                 }
               }
@@ -750,12 +767,62 @@ const PlatoCalendar = {
     }
 
     const calDoc = await this.fetchCalendarDoc(year, month);
-    return this.parseCalendarDoc(calDoc, year, month, statusMaps);
+    statusMaps.timeMap = await this.fetchPreciseTimes(calDoc, statusMaps, year, month);
+    const data = this.parseCalendarDoc(calDoc, year, month, statusMaps);
+    data.timeEnriched = true;
+    return data;
+  },
+
+  async fetchPreciseTimes(calDoc, statusMaps, year, month) {
+    const refs = new Map();
+    calDoc.querySelectorAll('li[data-region="event-item"] a[href*="/mod/"]').forEach(link => {
+      const match = link.href.match(/\/mod\/(assign|vod|quiz)\/view\.php\?id=(\d+)/);
+      if (match) refs.set(match[2], link.href);
+    });
+    Object.values(statusMaps.globalStatusMap || {}).forEach(item => {
+      const due = [...(item.parsedPeriod || '').matchAll(/(\d{1,2})월\s*(\d{1,2})일/g)].pop();
+      const previousMonth = month === 1 ? 12 : month - 1;
+      const dueMonth = item.dueAt ? CalendarTime.seoulParts(item.dueAt).month : Number(due?.[1]);
+      if ([month, previousMonth].includes(dueMonth) && item.href) refs.set(item.modId, item.href);
+    });
+    const entries = [...refs].filter(([id, href]) => {
+      try {
+        const url = new URL(href, location.origin);
+        return url.hostname === 'plato.pusan.ac.kr' && /\/mod\/(assign|vod|quiz)\/view\.php$/.test(url.pathname) && url.searchParams.get('id') === id;
+      } catch (error) { return false; }
+    });
+    for (let i = 0; i < entries.length; i += 4) {
+      await Promise.all(entries.slice(i, i + 4).map(async ([id, href]) => {
+        if (this.timeCache[id] && Date.now() - this.timeCache[id].fetchedAt < 60000) return;
+        try {
+          const response = await this.fetchWithTimeout(href, {}, 6000);
+          if (!response.ok || (response.redirected && /\/login\//.test(response.url))) return;
+          const html = await response.text();
+          if (/id="form-login-sso"/.test(html)) return;
+          const doc = new DOMParser().parseFromString(this.cleanHtmlForParsing(html), 'text/html');
+          const rows = [...doc.querySelectorAll('li.cml-item')];
+          const assignmentDue = rows.find(row => /종료\s*일시/.test(row.querySelector('.cml-label')?.textContent || ''))
+            ?.querySelector('.cml-text')?.textContent || '';
+          const start = CalendarTime.parse(doc.querySelector('.timeopen')?.textContent || '');
+          const due = CalendarTime.parse(doc.querySelector('.timeclose')?.textContent || assignmentDue);
+          if (due) this.timeCache[id] = {
+            startAt: start?.at || null, startTimePrecision: start?.precision || null,
+            dueAt: due.at, timePrecision: due.precision, originalDueText: due.original,
+            dueYear: due.year, dueMonth: due.month, dueDay: due.day,
+            fetchedAt: Date.now()
+          };
+        } catch (error) {
+          console.warn('Plato Calendar: deadline detail unavailable for', id);
+        }
+      }));
+    }
+    return this.timeCache;
   },
 
   parseCalendarDoc(calDoc, curYear, curMonth, statusMaps) {
     const globalStatusMap = statusMaps?.globalStatusMap || this.cachedStatusMap || {};
     const nameStatusMap = statusMaps?.nameStatusMap || this.cachedNameStatusMap || {};
+    const timeMap = statusMaps?.timeMap || this.timeCache;
     const totalDays = new Date(curYear, curMonth, 0).getDate();
     const dayCells = calDoc.querySelectorAll('td.day');
 
@@ -807,6 +874,7 @@ const PlatoCalendar = {
           const isCompleted = statusInfo ? statusInfo.isCompleted : false;
           const courseName = statusInfo ? statusInfo.courseName : (inferredCourseName || '교과과정');
           const parsedPeriod = statusInfo ? statusInfo.parsedPeriod : '';
+          const precise = modId ? (timeMap[modId] || (statusInfo?.dueAt ? statusInfo : null)) : null;
 
           const ev = {
             day,
@@ -818,7 +886,8 @@ const PlatoCalendar = {
             href,
             isCompleted,
             courseName,
-            parsedPeriod
+            parsedPeriod,
+            ...(precise || {})
           };
 
           dayEvents.push(ev);
@@ -879,18 +948,20 @@ const PlatoCalendar = {
     // 강좌 활동 현황 중 해당 월에 마감인 항목이 캘린더 HTML에서 누락된 경우 보정
     if (globalStatusMap) {
       Object.values(globalStatusMap).forEach(item => {
-        if (!item.parsedPeriod) return;
-        const matches = [...item.parsedPeriod.matchAll(/(\d{1,2})월\s*(\d{1,2})일/g)];
-        if (matches.length === 0) return;
+        const precise = timeMap[item.modId] || (item.dueAt ? item : null);
+        if (!item.parsedPeriod && !precise?.dueAt) return;
+        const matches = [...(item.parsedPeriod || '').matchAll(/(\d{1,2})월\s*(\d{1,2})일/g)];
+        if (matches.length === 0 && !precise?.dueAt) return;
         const lastMatch = matches[matches.length - 1];
-        const dueM = parseInt(lastMatch[1], 10);
-        const dueD = parseInt(lastMatch[2], 10);
+        const preciseDue = precise?.dueAt ? CalendarTime.seoulParts(precise.dueAt) : null;
+        const dueM = preciseDue?.month || parseInt(lastMatch[1], 10);
+        const dueD = preciseDue?.day || parseInt(lastMatch[2], 10);
 
-        if (dueM === curMonth && dueD >= 1 && dueD <= totalDays) {
+        if ((!preciseDue || preciseDue.year === curYear) && dueM === curMonth && dueD >= 1 && dueD <= totalDays) {
           const key = `${item.courseName}_mod_${item.modId}`;
           if (!uniqueMap.has(key)) {
             const firstMatch = matches[0];
-            const startD = (parseInt(firstMatch[1], 10) === curMonth) ? parseInt(firstMatch[2], 10) : dueD;
+            const startD = firstMatch && parseInt(firstMatch[1], 10) === curMonth ? parseInt(firstMatch[2], 10) : dueD;
             const newAct = {
               day: dueD,
               startDay: startD,
@@ -903,7 +974,8 @@ const PlatoCalendar = {
               href: item.href || '',
               isCompleted: item.isCompleted,
               courseName: item.courseName,
-              parsedPeriod: item.parsedPeriod
+              parsedPeriod: item.parsedPeriod,
+              ...(precise || {})
             };
             uniqueMap.set(key, newAct);
           } else {
@@ -919,40 +991,13 @@ const PlatoCalendar = {
       });
     }
 
-    const uniqueActivities = Array.from(uniqueMap.values());
-
-    // 정확한 D-Day 계산 (연도/월 차이 반영)
-    const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-
-    uniqueActivities.forEach(item => {
-      const dueMidnight = new Date(curYear, curMonth - 1, item.dueDay).getTime();
-      const diff = Math.round((dueMidnight - todayMidnight) / (1000 * 60 * 60 * 24));
-      item.dDayDiff = diff;
-
-      if (item.isCompleted) {
-        item.statusType = 'done';
-        item.statusLabel = '완료';
-        item.dDayText = '완료';
-      } else if (diff < 0) {
-        item.statusType = 'passed';
-        item.statusLabel = '기한 지남';
-        item.dDayText = `${Math.abs(diff)}일 전 마감`;
-      } else if (diff === 0) {
-        item.statusType = 'pending';
-        item.statusLabel = '오늘 마감';
-        item.dDayText = '오늘 마감';
-      } else if (diff === 1) {
-        item.statusType = 'pending';
-        item.statusLabel = 'D-1';
-        item.dDayText = 'D-1';
-      } else {
-        item.statusType = 'pending';
-        item.statusLabel = '미완료';
-        item.dDayText = `D-${diff}`;
-      }
-
-      item.periodText = this.formatPeriodText(item.parsedPeriod, curYear, curMonth, item.startDay, item.dueDay);
+    // A 24:00 deadline belongs to the following date/month.
+    const uniqueActivities = Array.from(uniqueMap.values()).filter(item => {
+      if (!item.dueAt) return true;
+      const due = CalendarTime.seoulParts(item.dueAt);
+      return due.year === curYear && due.month === curMonth;
     });
+    uniqueActivities.forEach(item => CalendarTime.applyStatus(item, curYear, curMonth));
 
     const dayDueActivitiesMap = {};
     uniqueActivities.forEach(act => {
@@ -964,17 +1009,7 @@ const PlatoCalendar = {
 
     // 빨간색 미완료(pending) 일정을 최우선으로, 그 다음 기한 지남(passed), 완료(done) 순으로 정렬
     Object.keys(dayDueActivitiesMap).forEach(day => {
-      dayDueActivitiesMap[day].sort((a, b) => {
-        const rank = { pending: 1, passed: 2, done: 3 };
-        const rA = rank[a.statusType] || 99;
-        const rB = rank[b.statusType] || 99;
-        if (rA !== rB) return rA - rB;
-        const typeRank = { '과제': 1, '퀴즈': 2, '강의': 3, '활동': 4 };
-        const tA = typeRank[a.type] || 5;
-        const tB = typeRank[b.type] || 5;
-        if (tA !== tB) return tA - tB;
-        return (a.title || '').localeCompare(b.title || '');
-      });
+      dayDueActivitiesMap[day].sort(CalendarTime.compare);
     });
 
     // 각 일자별 이벤트 목록을 마감일 기준 활동 목록으로 정확히 동기화
@@ -982,20 +1017,7 @@ const PlatoCalendar = {
       dObj.events = dayDueActivitiesMap[dObj.day] || [];
     });
 
-    uniqueActivities.sort((a, b) => {
-      const rank = { pending: 1, passed: 2, done: 3 };
-      if (rank[a.statusType] !== rank[b.statusType]) {
-        return rank[a.statusType] - rank[b.statusType];
-      }
-      if (a.dueDay !== b.dueDay) {
-        return a.dueDay - b.dueDay;
-      }
-      const typeRank = { '과제': 1, '퀴즈': 2, '강의': 3, '활동': 4 };
-      const tA = typeRank[a.type] || 5;
-      const tB = typeRank[b.type] || 5;
-      if (tA !== tB) return tA - tB;
-      return (a.title || '').localeCompare(b.title || '');
-    });
+    uniqueActivities.sort(CalendarTime.compare);
 
     return {
       curYear,
@@ -1008,6 +1030,7 @@ const PlatoCalendar = {
 
   render() {
     if (!this.cachedData) return;
+    CalendarTime.refreshData(this.cachedData);
     const { curYear, curMonth, days } = this.cachedData;
 
     const yearEl = document.querySelector('#plato-cal-year-text');
@@ -1185,17 +1208,7 @@ const PlatoCalendar = {
     if (!this.cachedData) return;
 
     const rawItems = (this.cachedData.activities || []).filter(a => a.dueDay === this.selectedDay);
-    const items = rawItems.slice().sort((a, b) => {
-      const rank = { pending: 1, passed: 2, done: 3 };
-      const rA = rank[a.statusType] || 99;
-      const rB = rank[b.statusType] || 99;
-      if (rA !== rB) return rA - rB;
-      const typeRank = { '과제': 1, '퀴즈': 2, '강의': 3, '활동': 4 };
-      const tA = typeRank[a.type] || 5;
-      const tB = typeRank[b.type] || 5;
-      if (tA !== tB) return tA - tB;
-      return (a.title || '').localeCompare(b.title || '');
-    });
+    const items = rawItems.slice().sort(CalendarTime.compare);
     const curYear = this.cachedData.curYear;
     const curMonth = this.cachedData.curMonth;
     const d = new Date(curYear, curMonth - 1, this.selectedDay);
@@ -1218,15 +1231,10 @@ const PlatoCalendar = {
       return;
     }
 
-    const now = new Date();
-    const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-    const selectedMidnight = new Date(curYear, curMonth - 1, this.selectedDay).getTime();
-    const isPastSelected = selectedMidnight < todayMidnight;
-
     // 카드 렌더링: 두꺼운 상태 바(좌측 6px), 큰 상태 뱃지, 기간(몇월몇일 ~ 몇월몇일)
     grid.innerHTML = items.map(item => {
-      const cardClass = isPastSelected ? 'card-passed' : `card-${item.statusType}`;
-      const badgeClass = isPastSelected ? 'badge-passed' : `badge-${item.statusType}`;
+      const cardClass = `card-${item.statusType}`;
+      const badgeClass = `badge-${item.statusType}`;
       return `
         <a href="${item.href}" class="plato-task-card ${cardClass}" target="_blank" rel="noopener noreferrer">
           <div class="plato-task-card-header">
@@ -1236,7 +1244,7 @@ const PlatoCalendar = {
           <span class="plato-task-name" title="${item.title}">${item.title}</span>
           <div class="plato-task-meta">
             <span class="plato-task-period">${item.periodText}</span>
-            <span class="plato-task-dday dday-${item.statusType}">${item.dDayText}</span>
+            ${!item.isCompleted && item.dDayText ? `<span class="plato-task-dday dday-${item.statusType}">${item.dDayText}</span>` : ''}
           </div>
         </a>
       `;
@@ -1894,6 +1902,7 @@ const BbitsCalendar = {
 
             const rawPeriod = li.querySelector('.text-ubstrap')?.innerText.trim() || '';
             let parsedPeriod = '';
+            const exactPeriod = CalendarTime.parseAll(rawPeriod);
             const periodMatches = rawPeriod.match(/(\d{4})-(\d{1,2})-(\d{1,2})/g);
             let startDay = null;
             let dueDay = null;
@@ -1913,6 +1922,11 @@ const BbitsCalendar = {
               dueYear = dY; dueMonth = dM; dueDay = dD;
               parsedPeriod = `${dM}월 ${dD}일 마감`;
             }
+            const exactStart = exactPeriod.length > 1 ? exactPeriod[0] : null;
+            const exactDue = exactPeriod.at(-1) || null;
+            if (exactDue) {
+              dueYear = exactDue.year; dueMonth = exactDue.month; dueDay = exactDue.day;
+            }
 
             const progressText = li.querySelector('.modtype_video_info_progress')?.innerText.trim() || '';
             const isCompleted = li.querySelector('.video_completed') !== null || (progressText && progressText.includes('100%'));
@@ -1926,6 +1940,11 @@ const BbitsCalendar = {
               comp: 'mod_vod',
               isCompleted,
               parsedPeriod,
+              startAt: exactStart?.at || null,
+              startTimePrecision: exactStart?.precision || null,
+              dueAt: exactDue?.at || null,
+              timePrecision: exactDue?.precision || null,
+              originalDueText: exactDue?.original || rawPeriod,
               startYear,
               startMonth,
               startDay,
@@ -1954,6 +1973,7 @@ const BbitsCalendar = {
             const weekTd = tr.querySelector('td.c0') || tr.querySelector('td:first-child');
 
             const rawDue = dueTd ? dueTd.innerText.trim() : '';
+            const exactDue = CalendarTime.parse(rawDue);
             const statusText = statusTd ? statusTd.innerText.trim() : tr.innerText;
             const isCompleted = this.checkIsCompleted(statusText, tr);
 
@@ -1971,6 +1991,9 @@ const BbitsCalendar = {
               dueMonth = parseInt(dueMatch[2], 10);
               dueDay = parseInt(dueMatch[3], 10);
               parsedPeriod = `${dueMonth}월 ${dueDay}일 마감`;
+            }
+            if (exactDue) {
+              dueYear = exactDue.year; dueMonth = exactDue.month; dueDay = exactDue.day;
             }
 
             const weekText = weekTd ? weekTd.innerText.trim() : '';
@@ -1992,6 +2015,9 @@ const BbitsCalendar = {
               comp: 'mod_assign',
               isCompleted,
               parsedPeriod,
+              dueAt: exactDue?.at || null,
+              timePrecision: exactDue?.precision || null,
+              originalDueText: rawDue,
               startYear,
               startMonth,
               startDay,
@@ -2092,7 +2118,12 @@ const BbitsCalendar = {
               href: item.href || '',
               isCompleted: item.isCompleted,
               courseName: item.courseName,
-              parsedPeriod: item.parsedPeriod
+              parsedPeriod: item.parsedPeriod,
+              startAt: item.startAt || null,
+              startTimePrecision: item.startTimePrecision || null,
+              dueAt: item.dueAt || null,
+              timePrecision: item.timePrecision || null,
+              originalDueText: item.originalDueText || ''
             });
           }
         }
@@ -2175,37 +2206,7 @@ const BbitsCalendar = {
     days.sort((a, b) => a.day - b.day);
 
     const uniqueActivities = Array.from(uniqueMap.values());
-    const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-
-    uniqueActivities.forEach(item => {
-      const dueMidnight = new Date(curYear, curMonth - 1, item.dueDay).getTime();
-      const diff = Math.round((dueMidnight - todayMidnight) / (1000 * 60 * 60 * 24));
-      item.dDayDiff = diff;
-
-      if (item.isCompleted) {
-        item.statusType = 'done';
-        item.statusLabel = '완료';
-        item.dDayText = '완료';
-      } else if (diff < 0) {
-        item.statusType = 'passed';
-        item.statusLabel = '기한 지남';
-        item.dDayText = `${Math.abs(diff)}일 전 마감`;
-      } else if (diff === 0) {
-        item.statusType = 'pending';
-        item.statusLabel = '오늘 마감';
-        item.dDayText = '오늘 마감';
-      } else if (diff === 1) {
-        item.statusType = 'pending';
-        item.statusLabel = 'D-1';
-        item.dDayText = 'D-1';
-      } else {
-        item.statusType = 'pending';
-        item.statusLabel = '미완료';
-        item.dDayText = `D-${diff}`;
-      }
-
-      item.periodText = this.formatPeriodText(item.parsedPeriod, curYear, curMonth, item.startDay, item.dueDay);
-    });
+    uniqueActivities.forEach(item => CalendarTime.applyStatus(item, curYear, curMonth));
 
     const dayDueActivitiesMap = {};
     uniqueActivities.forEach(act => {
@@ -2217,17 +2218,7 @@ const BbitsCalendar = {
 
     // 빨간색 미완료(pending) 일정을 최우선으로, 그 다음 기한 지남(passed), 완료(done) 순으로 정렬
     Object.keys(dayDueActivitiesMap).forEach(day => {
-      dayDueActivitiesMap[day].sort((a, b) => {
-        const rank = { pending: 1, passed: 2, done: 3 };
-        const rA = rank[a.statusType] || 99;
-        const rB = rank[b.statusType] || 99;
-        if (rA !== rB) return rA - rB;
-        const typeRank = { '과제': 1, '퀴즈': 2, '강의': 3, '활동': 4 };
-        const tA = typeRank[a.type] || 5;
-        const tB = typeRank[b.type] || 5;
-        if (tA !== tB) return tA - tB;
-        return (a.title || '').localeCompare(b.title || '');
-      });
+      dayDueActivitiesMap[day].sort(CalendarTime.compare);
     });
 
     // 각 일자별 이벤트 목록을 마감일 기준 활동 목록으로 할당 (시작일 표시 원천 제거)
@@ -2235,20 +2226,7 @@ const BbitsCalendar = {
       dObj.events = dayDueActivitiesMap[dObj.day] || [];
     });
 
-    uniqueActivities.sort((a, b) => {
-      const rank = { pending: 1, passed: 2, done: 3 };
-      if (rank[a.statusType] !== rank[b.statusType]) {
-        return rank[a.statusType] - rank[b.statusType];
-      }
-      if (a.dueDay !== b.dueDay) {
-        return a.dueDay - b.dueDay;
-      }
-      const typeRank = { '과제': 1, '퀴즈': 2, '강의': 3, '활동': 4 };
-      const tA = typeRank[a.type] || 5;
-      const tB = typeRank[b.type] || 5;
-      if (tA !== tB) return tA - tB;
-      return (a.title || '').localeCompare(b.title || '');
-    });
+    uniqueActivities.sort(CalendarTime.compare);
 
     return {
       curYear,
@@ -2261,6 +2239,7 @@ const BbitsCalendar = {
 
   render() {
     if (!this.cachedData) return;
+    CalendarTime.refreshData(this.cachedData);
     const { curYear, curMonth, days } = this.cachedData;
 
     const yearEl = document.querySelector('#bbits-cal-year-text');
@@ -2435,17 +2414,7 @@ const BbitsCalendar = {
     if (!this.cachedData) return;
 
     const rawItems = (this.cachedData.activities || []).filter(a => a.dueDay === this.selectedDay);
-    const items = rawItems.slice().sort((a, b) => {
-      const rank = { pending: 1, passed: 2, done: 3 };
-      const rA = rank[a.statusType] || 99;
-      const rB = rank[b.statusType] || 99;
-      if (rA !== rB) return rA - rB;
-      const typeRank = { '과제': 1, '퀴즈': 2, '강의': 3, '활동': 4 };
-      const tA = typeRank[a.type] || 5;
-      const tB = typeRank[b.type] || 5;
-      if (tA !== tB) return tA - tB;
-      return (a.title || '').localeCompare(b.title || '');
-    });
+    const items = rawItems.slice().sort(CalendarTime.compare);
     const curYear = this.cachedData.curYear;
     const curMonth = this.cachedData.curMonth;
     const d = new Date(curYear, curMonth - 1, this.selectedDay);
@@ -2468,14 +2437,9 @@ const BbitsCalendar = {
       return;
     }
 
-    const now = new Date();
-    const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-    const selectedMidnight = new Date(curYear, curMonth - 1, this.selectedDay).getTime();
-    const isPastSelected = selectedMidnight < todayMidnight;
-
     grid.innerHTML = items.map(item => {
-      const cardClass = isPastSelected ? 'card-passed' : `card-${item.statusType}`;
-      const badgeClass = isPastSelected ? 'badge-passed' : `badge-${item.statusType}`;
+      const cardClass = `card-${item.statusType}`;
+      const badgeClass = `badge-${item.statusType}`;
       return `
         <a href="${item.href}" class="plato-task-card ${cardClass}" target="_blank" rel="noopener noreferrer">
           <div class="plato-task-card-header">
@@ -2485,12 +2449,27 @@ const BbitsCalendar = {
           <span class="plato-task-name" title="${item.title}">${item.title}</span>
           <div class="plato-task-meta">
             <span class="plato-task-period">${item.periodText}</span>
-            <span class="plato-task-dday dday-${item.statusType}">${item.dDayText}</span>
+            ${!item.isCompleted && item.dDayText ? `<span class="plato-task-dday dday-${item.statusType}">${item.dDayText}</span>` : ''}
           </div>
         </a>
       `;
     }).join('');
   }
+};
+
+const PLATO_COURSE_URL = 'https://plato.pusan.ac.kr/local/ubion/allcourse/regular/index.php';
+const markPlatoAutoLogin = () => {
+  sessionStorage.setItem('plato_auto_login_pending', String(Date.now()));
+  sessionStorage.removeItem('plato_home_clicked_from_course');
+};
+const hasRecentPlatoAutoLogin = () => {
+  const started = Number(sessionStorage.getItem('plato_auto_login_pending'));
+  if (!started) return false;
+  if (Date.now() - started > 5 * 60 * 1000) {
+    sessionStorage.removeItem('plato_auto_login_pending');
+    return false;
+  }
+  return true;
 };
 
 // 플라토 홈 유지 여부 판별 (교과과정에서 홈 버튼을 직접 눌러 이동해 온 1회성 진입만 홈 유지)
@@ -2658,28 +2637,9 @@ const attemptLogin = () => {
     const isDevPlato = host === "dev-plato.pusan.ac.kr" || host === "dev-plato.ac.kr" || host.includes("dev-plato");
 
     if (isPlato || isDevPlato) {
-      // 1. 실제 공지 팝업/모달 자동 닫기 (배너나 링크 내부 버튼은 절대 클릭하지 않음)
-      if (data.platoPopupClose) {
-        const closeSelectors = [
-          '.modal-dialog .btn-close',
-          '.modal-dialog .close',
-          '.modal .btn-close',
-          '.modal .close',
-          '.pop-close',
-          '[data-bs-dismiss="modal"]'
-        ];
-        document.querySelectorAll(closeSelectors.join(', ')).forEach(c => {
-          // 배너나 a 링크 내부의 닫기 버튼은 클릭하지 않음 (새 탭/창 열림 방지)
-          if (c.closest('a, .banner, [target="_blank"]')) return;
-          // 세션 만료/재로그인 모달의 버튼은 절대 닫기 처리하지 않음 (재로그인 로직이 처리하도록 보존)
-          const parentModal = c.closest('.modal, [role="dialog"], [role="alertdialog"], [data-region="modal-container"]');
-          if (parentModal && /활동이\s*없어\s*로그아웃|세션\s*만료|다시\s*로그인/i.test(parentModal.innerText)) return;
-
-          if (!c.dataset.autoClosed) {
-            c.dataset.autoClosed = "1";
-            c.click();
-          }
-        });
+      // 확인된 홈 공지 캐러셀만 사이트 고유 버튼으로 처리한다.
+      if (isPlato && (path === '/' || path === '/index.php' || path === '') && data.platoPopupClose) {
+        if (PlatoNotice.handle(true)) return; // 사이트의 popupNotShow 요청이 이동 전에 시작되도록 한다.
       }
 
       if (!data.popupToggle) return;
@@ -2720,7 +2680,10 @@ const attemptLogin = () => {
                                  Array.from(modal.querySelectorAll('button, a')).find(el => /다시\s*로그인|재로그인/i.test(el.innerText));
 
               if (reloginBtn) {
-                if (isPlato) sessionStorage.setItem('plato_need_calendar_refresh', '1');
+                if (isPlato) {
+                  markPlatoAutoLogin();
+                  sessionStorage.setItem('plato_need_calendar_refresh', '1');
+                }
                 reloginBtn.click();
               }
 
@@ -2728,10 +2691,13 @@ const attemptLogin = () => {
               const currentUrl = window.location.href;
               setTimeout(() => {
                 if (!window.location.pathname.includes('/login/') && !window.location.pathname.includes('login.php')) {
-                  if (isPlato) sessionStorage.setItem('plato_need_calendar_refresh', '1');
+                  if (isPlato) {
+                    markPlatoAutoLogin();
+                    sessionStorage.setItem('plato_need_calendar_refresh', '1');
+                  }
                   const targetLoginUrl = isDevPlato
                     ? `https://${host}/login.php?wantsurl=${encodeURIComponent(currentUrl)}`
-                    : `https://plato.pusan.ac.kr/login/index.php?wantsurl=${encodeURIComponent(currentUrl)}`;
+                    : `https://plato.pusan.ac.kr/login/index.php?wantsurl=${encodeURIComponent(PLATO_COURSE_URL)}`;
                   window.location.href = targetLoginUrl;
                 }
               }, 500);
@@ -2746,15 +2712,21 @@ const attemptLogin = () => {
         );
         if (directSaveBtn) {
           directSaveBtn.dataset.sessionClicked = "1";
-          if (isPlato) sessionStorage.setItem('plato_need_calendar_refresh', '1');
+          if (isPlato) {
+            markPlatoAutoLogin();
+            sessionStorage.setItem('plato_need_calendar_refresh', '1');
+          }
           directSaveBtn.click();
           const currentUrl = window.location.href;
           setTimeout(() => {
             if (!window.location.pathname.includes('/login/') && !window.location.pathname.includes('login.php')) {
-              if (isPlato) sessionStorage.setItem('plato_need_calendar_refresh', '1');
+              if (isPlato) {
+                markPlatoAutoLogin();
+                sessionStorage.setItem('plato_need_calendar_refresh', '1');
+              }
               const targetLoginUrl = isDevPlato
                 ? `https://${host}/login.php?wantsurl=${encodeURIComponent(currentUrl)}`
-                : `https://plato.pusan.ac.kr/login/index.php?wantsurl=${encodeURIComponent(currentUrl)}`;
+                : `https://plato.pusan.ac.kr/login/index.php?wantsurl=${encodeURIComponent(PLATO_COURSE_URL)}`;
               window.location.href = targetLoginUrl;
             }
           }, 500);
@@ -2795,8 +2767,8 @@ const attemptLogin = () => {
           lockTarget.dataset.autoLoggingIn = "1";
           u.dataset.done = "1";
           if (isPlato) {
+            markPlatoAutoLogin();
             sessionStorage.setItem('plato_need_calendar_refresh', '1');
-            sessionStorage.removeItem('plato_home_clicked_from_course');
           }
 
           // 값 주입 및 이벤트 발생
@@ -2826,20 +2798,12 @@ const attemptLogin = () => {
           if (!document.body.dataset.loginRedirecting) {
             document.body.dataset.loginRedirecting = "1";
             if (isPlato) sessionStorage.removeItem('plato_home_clicked_from_course');
+            if (isPlato) markPlatoAutoLogin();
             let loginUrl;
             if (isDevPlato) {
               loginUrl = `https://${host}/login.php?wantsurl=${encodeURIComponent(href)}`;
             } else {
-              const isHome = path === "/" || path === "/index.php" || path === "";
-              loginUrl = `https://plato.pusan.ac.kr/login/index.php?wantsurl=${encodeURIComponent(href)}`;
-              if (isHome) {
-                if (data.platoCalendarToggle !== false) {
-                  const targetUrl = "https://plato.pusan.ac.kr/local/ubion/allcourse/regular/index.php";
-                  loginUrl = `https://plato.pusan.ac.kr/login/index.php?wantsurl=${encodeURIComponent(targetUrl)}`;
-                } else {
-                  loginUrl = "https://plato.pusan.ac.kr/login/index.php";
-                }
-              }
+              loginUrl = `https://plato.pusan.ac.kr/login/index.php?wantsurl=${encodeURIComponent(PLATO_COURSE_URL)}`;
             }
             window.location.href = loginUrl;
             return;
@@ -2852,6 +2816,14 @@ const attemptLogin = () => {
         sessionStorage.removeItem('plato_login_failed');
 
         if (isPlato) {
+          if (hasRecentPlatoAutoLogin()) {
+            if (!path.includes('/local/ubion/allcourse/')) {
+              window.location.replace(PLATO_COURSE_URL);
+              return;
+            }
+            sessionStorage.removeItem('plato_auto_login_pending');
+            sessionStorage.removeItem('plato_home_clicked_from_course');
+          }
           // 플라토 메인 홈(/ 또는 /index.php)인 경우 처리
           // 교과과정 페이지에서 홈 버튼을 직접 누른 1회성 진입만 홈 유지 허용, 그 외(새로고침, 직링크 등)는 교과과정으로 자동 이동
           const isHome = path === "/" || path === "/index.php" || path === "";
