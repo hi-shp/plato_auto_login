@@ -17,6 +17,10 @@
 
 ## 2. 업데이트 내역
 
+* **v2026.10.11**:
+    * 배포 파일의 구성, 버전, JavaScript 구문 및 리소스 참조를 검사하는 릴리스 도구를 추가했습니다.
+    * Chrome 웹스토어 제출용 ZIP을 버전별로 생성하고, ZIP 내부 파일이 현재 소스와 일치하는지 검증합니다.
+    * 자동 로그인과 캘린더의 동작은 변경하지 않았습니다.
 * **v2026.09.14**:
     * 달력 일자별 일정 표시 시 아직 미완료된 일정(빨간색)이 최우선으로 정렬되어 먼저 표시되도록 우선순위 개선 (전체 3개 이하 일정은 모두 직접 노출).
     * 캘린더 월 이동 시 기존 캐시를 즉시 표시한 뒤 백그라운드에서 최신 일정을 재검증하여 다른 월 과제 갱신 누락 방지.
@@ -82,7 +86,7 @@
 
 ## 4. 데이터 보안
 * 모든 계정 정보는 브라우저 내부 로컬 저장소(`chrome.storage.local`)에만 저장됩니다.
-* 외부 서버로 전송되거나 공유되지 않습니다.
+* 로그인 시 계정 정보는 각 서비스의 로그인 페이지로 전달됩니다. 확장 프로그램 개발자의 별도 서버로 전송하는 코드는 없습니다.
 
 ---
 
@@ -90,3 +94,20 @@
 * **이메일**: hishp@pusan.ac.kr
 * **GitHub**: [https://github.com/hi-shp/plato_auto_login](https://github.com/hi-shp/plato_auto_login)
 * **웹스토어**: [PLATO 자동 로그인 설치 페이지](https://chromewebstore.google.com/detail/plato-%EC%9E%90%EB%8F%99-%EB%A1%9C%EA%B7%B8%EC%9D%B8/alfanhjkmennhlhicpinigkgkifknamm)
+
+---
+
+## 6. 개발 및 배포
+
+프로젝트 구조와 저장 키는 [PROJECT_STRUCTURE.md](./PROJECT_STRUCTURE.md)를 참고하세요. Python 3와 Node.js가 필요하며, 별도의 Python 패키지는 설치하지 않습니다.
+
+```powershell
+python scripts/release.py --check
+python scripts/release.py
+python scripts/release.py --verify
+git diff --check
+```
+
+`python scripts/release.py` 한 번으로 소스 검사, 리소스 수집, `dist/plato_auto_login_v[버전].zip` 생성 및 압축 검증을 수행합니다. 같은 버전의 ZIP이 이미 있으면 현재 소스와 일치할 때만 재사용합니다. 소스가 바뀌면 `manifest.json` 버전과 README 최상단 업데이트 내역을 먼저 갱신하세요. 버전은 서울 날짜 기준이며 같은 날 추가 릴리스에는 네 번째 숫자를 붙입니다.
+
+ZIP에는 확장 프로그램이 참조하는 실행 파일만 들어갑니다. `dist/`와 에이전트 지침 파일은 Git에서 제외됩니다. 검증 후 변경 파일을 검토하여 커밋하고 `origin/main`에 푸시합니다. 웹스토어 업로드와 게시, 실제 로그인 확인은 별도 수동 작업입니다.

@@ -1,5 +1,6 @@
 # 배포용 바이너리 압축 파일
 *.zip
+dist/
 
 # OS 생성 임시 파일
 Thumbs.db
@@ -11,3 +12,15 @@ Desktop.ini
 check_*.js
 temp_*.html
 temp_*.js
+
+# Local AI agent instructions and personal settings (any depth)
+AGENTS.md
+.agents/
+.codex/
+CLAUDE.md
+GEMINI.md
+.cursor/rules/
+
+# Python validation byproducts
+__pycache__/
+*.pyc
