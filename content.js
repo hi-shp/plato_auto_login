@@ -55,6 +55,8 @@ const PlatoCalendar = {
   cachedCourses: null,
   navRequestId: 0,
   timeCache: {},
+  timeRequests: new Map(),
+  preciseRuns: new Map(),
 
   WEEKDAYS_KO: ['일', '월', '화', '수', '목', '금', '토'],
 
@@ -372,6 +374,7 @@ const PlatoCalendar = {
   },
 
   async navigateToMonth(year, month) {
+    const reqId = ++this.navRequestId;
     this.viewYear = year;
     this.viewMonth = month;
     this.selectedDay = null;
@@ -403,11 +406,9 @@ const PlatoCalendar = {
       this.setLoading(true);
     }
 
-    const reqId = ++this.navRequestId;
-
     try {
       // 백그라운드 최신 데이터 동기화 (Stale-While-Revalidate: 캐시가 있어도 최신 과제 확인)
-      const data = await this.fetchMonthCalendar(year, month);
+      const { data, calDoc, statusMaps } = await this.fetchMonthCalendar(year, month);
       if (reqId === this.navRequestId && data) {
         this.cachedData = data;
         this.monthCache[cacheKey] = data;
@@ -415,13 +416,14 @@ const PlatoCalendar = {
         this.monthCacheTimestamps[cacheKey] = Date.now();
 
         this.render();
+        this.setLoading(false);
         chrome.storage.local.set({
           plato_calendar_months: this.monthCache,
           plato_calendar_month_timestamps: this.monthCacheTimestamps
         });
 
-        // 이동한 월이 속한 학기의 나머지 월들도 백그라운드 동기화
-        this.syncSemesterMonthsInBackground();
+        await this.enrichMonthTimes(calDoc, statusMaps, year, month, reqId);
+        if (reqId === this.navRequestId) this.syncSemesterMonthsInBackground();
       }
     } catch (err) {
       console.error('Failed to load month calendar:', err);
@@ -490,7 +492,7 @@ const PlatoCalendar = {
     // 수동 새로고침 클릭 시 강좌 상태 및 캐시 타임스탬프를 초기화하여 전체 최신화
     this.cachedStatusMap = null;
     this.cachedNameStatusMap = null;
-    this.timeCache = {};
+    // 60초 이내의 검증된 상세 시각은 재사용한다. 마감일 변경 시에는 별도로 무효화한다.
     this.cachedCourses = null;
     this.monthCacheTimestamps = {};
     this.fetchAndRefreshData();
@@ -515,6 +517,9 @@ const PlatoCalendar = {
   },
 
   async fetchAndRefreshData() {
+    const year = this.viewYear;
+    const month = this.viewMonth;
+    const reqId = ++this.navRequestId;
     const btn = document.querySelector('#plato-refresh-btn');
     if (btn) btn.disabled = true;
 
@@ -534,19 +539,19 @@ const PlatoCalendar = {
       // 중복 호출 제거: 기존 2회 연속 실행되던 네트워크 요청을 1회로 통합하여 요청 수 50% 절감
       const [statusMaps, calDoc] = await Promise.all([
         this.fetchCourseStatuses(),
-        this.fetchCalendarDoc(this.viewYear, this.viewMonth)
+        this.fetchCalendarDoc(year, month)
       ]);
-
-      statusMaps.timeMap = await this.fetchPreciseTimes(calDoc, statusMaps, this.viewYear, this.viewMonth);
-
-      const data = this.parseCalendarDoc(calDoc, this.viewYear, this.viewMonth, statusMaps);
+      if (reqId !== this.navRequestId || year !== this.viewYear || month !== this.viewMonth) return;
+      this.invalidateChangedTimes(statusMaps);
+      statusMaps.timeMap = this.timeCache;
+      const data = this.parseCalendarDoc(calDoc, year, month, statusMaps);
       if (data && data.activities) {
-        data.timeEnriched = true;
+        data.timeEnriched = false;
         this.cachedData = data;
-        this.monthCache[`${this.viewYear}_${this.viewMonth}`] = data;
+        this.monthCache[`${year}_${month}`] = data;
         if (!this.monthCacheTimestamps) this.monthCacheTimestamps = {};
         const now = Date.now();
-        this.monthCacheTimestamps[`${this.viewYear}_${this.viewMonth}`] = now;
+        this.monthCacheTimestamps[`${year}_${month}`] = now;
 
         chrome.storage.local.set({
           plato_calendar_data: data,
@@ -555,15 +560,19 @@ const PlatoCalendar = {
           plato_calendar_last_fetch: now
         });
         this.render();
+        this.setLoading(false);
+        if (btn) btn.disabled = false;
+        await this.enrichMonthTimes(calDoc, statusMaps, year, month, reqId);
       }
 
-      // 핵심 개선: 같은 학기(1학기: 3~6월, 2학기: 9~12월 등)에 해당하는 모든 월을 백그라운드에서 일괄 동기화
-      this.syncSemesterMonthsInBackground(statusMaps);
+      if (reqId === this.navRequestId) this.syncSemesterMonthsInBackground(statusMaps);
     } catch (e) {
       console.error('Failed to fetch plato calendar data:', e);
     } finally {
-      this.setLoading(false);
-      if (btn) btn.disabled = false;
+      if (reqId === this.navRequestId) {
+        this.setLoading(false);
+        if (btn) btn.disabled = false;
+      }
     }
   },
 
@@ -582,6 +591,7 @@ const PlatoCalendar = {
   async syncSemesterMonthsInBackground(statusMaps) {
     try {
       const year = this.viewYear;
+      const startedRequestId = this.navRequestId;
       const targetMonths = this.getSemesterMonths(this.viewMonth);
       // 현재 열려 있는 월은 이미 fetchAndRefreshData에서 완료되었으므로 제외한 나머지 학기 월들 대상
       const otherMonths = targetMonths.filter(m => m !== this.viewMonth);
@@ -595,17 +605,18 @@ const PlatoCalendar = {
       await Promise.all(otherMonths.map(async (m) => {
         try {
           const cacheKey = `${year}_${m}`;
+          const previousTimestamp = this.monthCacheTimestamps?.[cacheKey];
           const calDoc = await this.fetchCalendarDoc(year, m);
           const data = this.parseCalendarDoc(calDoc, year, m, { ...maps, timeMap: this.timeCache });
 
-          if (data && data.activities) {
+          if (data && data.activities && this.monthCacheTimestamps?.[cacheKey] === previousTimestamp) {
             data.timeEnriched = false;
             this.monthCache[cacheKey] = data;
             if (!this.monthCacheTimestamps) this.monthCacheTimestamps = {};
             this.monthCacheTimestamps[cacheKey] = Date.now();
 
             // 백그라운드 동기화 완료 시점에 사용자가 해당 월로 이동해 있다면 즉시 화면 갱신
-            if (this.viewYear === year && this.viewMonth === m) {
+            if (startedRequestId === this.navRequestId && this.viewYear === year && this.viewMonth === m) {
               this.cachedData = data;
               this.render();
             }
@@ -809,13 +820,63 @@ const PlatoCalendar = {
     }
 
     const calDoc = await this.fetchCalendarDoc(year, month);
-    statusMaps.timeMap = await this.fetchPreciseTimes(calDoc, statusMaps, year, month);
+    this.invalidateChangedTimes(statusMaps);
+    statusMaps.timeMap = this.timeCache;
     const data = this.parseCalendarDoc(calDoc, year, month, statusMaps);
-    data.timeEnriched = true;
-    return data;
+    data.timeEnriched = false;
+    return { data, calDoc, statusMaps };
+  },
+
+  async enrichMonthTimes(calDoc, statusMaps, year, month, reqId) {
+    try {
+      const before = JSON.stringify(this.timeCache);
+      statusMaps.timeMap = await this.fetchPreciseTimes(calDoc, statusMaps, year, month);
+      if (reqId !== this.navRequestId || year !== this.viewYear || month !== this.viewMonth) return;
+      if (before === JSON.stringify(this.timeCache)) {
+        // The first render already used every cached precise time.
+        this.cachedData.timeEnriched = true;
+        chrome.storage.local.set({ plato_calendar_data: this.cachedData,
+          plato_calendar_months: this.monthCache });
+        return;
+      }
+      const data = this.parseCalendarDoc(calDoc, year, month, statusMaps);
+      data.timeEnriched = true;
+      this.cachedData = data;
+      const key = `${year}_${month}`;
+      this.monthCache[key] = data;
+      chrome.storage.local.set({ plato_calendar_data: data, plato_calendar_months: this.monthCache });
+      this.render();
+    } catch (error) {
+      console.warn('Plato Calendar: precise time enrichment failed:', error);
+    }
+  },
+
+  invalidateChangedTimes(statusMaps) {
+    Object.entries(statusMaps.globalStatusMap || {}).forEach(([id, item]) => {
+      const cached = this.timeCache[id];
+      if (!cached?.dueAt || !item.dueAt) return;
+      const day = value => new Date(value).toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
+      const unit = item.timePrecision === 'minute' ? 60000 : 1000;
+      if (day(cached.dueAt) !== day(item.dueAt) ||
+          (['minute', 'second'].includes(item.timePrecision) &&
+           Math.floor(Date.parse(cached.dueAt) / unit) !==
+           Math.floor(Date.parse(item.dueAt) / unit))) delete this.timeCache[id];
+    });
   },
 
   async fetchPreciseTimes(calDoc, statusMaps, year, month) {
+    const links = [...calDoc.querySelectorAll('li[data-region="event-item"] a[href*="/mod/"]')]
+      .map(link => link.href).sort();
+    const deadlines = Object.entries(statusMaps.globalStatusMap || {})
+      .map(([id, item]) => [id, item.dueAt || '']).sort(([a], [b]) => a.localeCompare(b));
+    const key = `${year}_${month}_${JSON.stringify([links, deadlines])}`;
+    if (this.preciseRuns.has(key)) return this.preciseRuns.get(key);
+    const run = this.fetchPreciseTimesImpl(calDoc, statusMaps, year, month);
+    this.preciseRuns.set(key, run);
+    try { return await run; } finally { this.preciseRuns.delete(key); }
+  },
+
+  async fetchPreciseTimesImpl(calDoc, statusMaps, year, month) {
     const refs = new Map();
     calDoc.querySelectorAll('li[data-region="event-item"] a[href*="/mod/"]').forEach(link => {
       const match = link.href.match(/\/mod\/(assign|vod|quiz)\/view\.php\?id=(\d+)/);
@@ -833,9 +894,27 @@ const PlatoCalendar = {
         return url.hostname === 'plato.pusan.ac.kr' && /\/mod\/(assign|vod|quiz)\/view\.php$/.test(url.pathname) && url.searchParams.get('id') === id;
       } catch (error) { return false; }
     });
-    for (let i = 0; i < entries.length; i += 4) {
-      await Promise.all(entries.slice(i, i + 4).map(async ([id, href]) => {
-        if (this.timeCache[id] && Date.now() - this.timeCache[id].fetchedAt < 60000) return;
+    let cursor = 0;
+    const worker = async () => {
+      while (cursor < entries.length) {
+        const [id, href] = entries[cursor++];
+        const listedDue = statusMaps.globalStatusMap?.[id]?.dueAt;
+        const fresh = () => {
+          const cached = this.timeCache[id];
+          const sameDay = !listedDue || !cached?.dueAt ||
+            new Date(listedDue).toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' }) ===
+            new Date(cached.dueAt).toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
+          return cached && sameDay && Date.now() - cached.fetchedAt < 60000;
+        };
+        if (fresh()) continue;
+        if (this.timeRequests.has(id)) {
+          await this.timeRequests.get(id);
+          if (statusMaps.globalStatusMap?.[id]) this.invalidateChangedTimes({
+            globalStatusMap: { [id]: statusMaps.globalStatusMap[id] }
+          });
+          if (fresh()) continue;
+        }
+        const request = (async () => {
         try {
           const response = await this.fetchWithTimeout(href, {}, 6000);
           if (!response.ok || (response.redirected && /\/login\//.test(response.url))) return;
@@ -856,8 +935,14 @@ const PlatoCalendar = {
         } catch (error) {
           console.warn('Plato Calendar: deadline detail unavailable for', id);
         }
-      }));
-    }
+        })();
+        this.timeRequests.set(id, request);
+        try { await request; } finally {
+          if (this.timeRequests.get(id) === request) this.timeRequests.delete(id);
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(4, entries.length) }, worker));
     return this.timeCache;
   },
 
@@ -2559,7 +2644,7 @@ const hasRecentPlatoAutoLogin = () => {
   return true;
 };
 
-// 플라토 홈 유지 여부 판별 (교과과정에서 홈 버튼을 직접 눌러 이동해 온 1회성 진입만 홈 유지)
+// 플라토 홈 유지 여부 판별 (모든 PLATO 페이지에서 실제 홈 메뉴를 클릭한 1회성 진입)
 // 홈에서 새로고침(F5)을 하거나 다른 경로로 진입 시에는 무조건 교과과정 페이지로 이동
 let allowPlatoHomeThisPage = false;
 if (window.location.hostname.includes("plato.pusan.ac.kr")) {
@@ -2580,10 +2665,11 @@ if (window.location.hostname.includes("plato.pusan.ac.kr")) {
       return false;
     })();
 
+    // 기존 저장 키를 유지하여 이미 이동 중인 탭의 의도도 보존한다.
     const fromCourseClick = sessionStorage.getItem('plato_home_clicked_from_course') === '1';
     sessionStorage.removeItem('plato_home_clicked_from_course');
 
-    // 새로고침이 아니고, 교과과정에서 홈 버튼을 누르고 이동해 온 최초 1회 뷰만 홈 유지
+    // 새로고침이 아닌 실제 홈 메뉴 클릭의 최초 1회 뷰만 홈 유지
     if (fromCourseClick && !isReload) {
       allowPlatoHomeThisPage = true;
     }
@@ -2928,7 +3014,7 @@ const attemptLogin = () => {
             }
           }
           // 플라토 메인 홈(/ 또는 /index.php)인 경우 처리
-          // 교과과정 페이지에서 홈 버튼을 직접 누른 1회성 진입만 홈 유지 허용, 그 외(새로고침, 직링크 등)는 교과과정으로 자동 이동
+          // PLATO 내부 페이지에서 홈 메뉴를 직접 누른 1회성 진입만 홈 유지
           const isHome = path === "/" || path === "/index.php" || path === "";
           if (isHome) {
             if (allowPlatoHomeThisPage) {
@@ -2989,7 +3075,7 @@ const checkInterval = setInterval(() => {
   attemptLogin();
 }, 2000);
 
-// 플라토 홈 버튼 클릭 감지: 교과과정 페이지에서 홈 버튼을 직접 클릭한 경우에만 1회성으로 홈 유지 허용
+// 플라토 홈 버튼 클릭 감지: PLATO 내부 어느 페이지든 실제 홈 메뉴 클릭만 기록
 if (window.location.hostname.includes("plato.pusan.ac.kr")) {
   document.addEventListener('click', (e) => {
     if (!e.isTrusted || e.defaultPrevented || e.button !== 0 ||
@@ -3013,9 +3099,7 @@ if (window.location.hostname.includes("plato.pusan.ac.kr")) {
                        link.getAttribute('role') === 'menuitem' ||
                        link.classList.contains('navbar-brand');
 
-    const isCoursePage = window.location.pathname.includes('/local/ubion/allcourse/');
-
-    if (isCoursePage && isHomeHref && (isHomeText || isHomeMenu || href === '/')) {
+    if (isHomeHref && (isHomeText || isHomeMenu)) {
       sessionStorage.setItem('plato_home_clicked_from_course', '1');
     } else {
       sessionStorage.removeItem('plato_home_clicked_from_course');

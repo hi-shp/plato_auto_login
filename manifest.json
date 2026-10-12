@@ -20,6 +20,11 @@
   "icons": { "128": "favicon.png" },
   "content_scripts": [
     {
+      "matches": ["https://plato.pusan.ac.kr/*"],
+      "js": ["notice-early.js"],
+      "run_at": "document_start"
+    },
+    {
       "matches": [
         "https://plato.pusan.ac.kr/*",
         "https://dev-plato.pusan.ac.kr/*",

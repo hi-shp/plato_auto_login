@@ -82,6 +82,50 @@ class FixtureBrowserTest(unittest.TestCase):
         self.wait.until(lambda _: self.state()["permanent"] == 1)
         self.assertEqual(self.state()["notices"], 0)
 
+    def test_async_notice_is_hidden_at_insertion_and_auto_processed(self):
+        self.open_fixture("popup-first-paint.html")
+        self.wait.until(lambda browser: browser.execute_script(
+            "return window.fixtureNotice.permanent === 1 && !window.__platoNoticeEarly.active"))
+        result = self.browser.execute_script("""
+            return { initial: window.fixtureNotice.initialVisibility,
+              active: window.__platoNoticeEarly.active,
+              remaining: document.querySelectorAll('.modal-ubboard-notice').length };
+        """)
+        self.assertEqual(result, {"initial": "hidden", "active": False, "remaining": 0})
+
+    def test_concealed_notice_uses_official_button_without_hiding_other_dialogs(self):
+        self.open_fixture("popup-lab.html")
+        self.browser.execute_script("""
+            const style = document.createElement('style');
+            style.textContent = '.modal-ubboard-notice { visibility: hidden !important; }';
+            document.head.append(style);
+            window.__platoNoticeEarly = {active:true, ready:true,
+                onClick: () => { if (!document.querySelector('.modal-ubboard-notice')) style.remove(); }};
+        """)
+        self.click("notices")
+        initial = self.browser.execute_script("""
+            return [...document.querySelectorAll('.modal-ubboard-notice')]
+                .map(item => getComputedStyle(item).visibility);
+        """)
+        self.assertEqual(initial, ["hidden", "hidden"])
+        self.browser.execute_script("PlatoNotice.handle(true)")
+        self.assertEqual(self.state()["permanent"], 2)
+        self.assertEqual(self.state()["notices"], 0)
+        self.click("assignment")
+        self.assertTrue(self.browser.find_element(By.CSS_SELECTOR, ".modal:not(.modal-ubboard-notice)").is_displayed())
+        self.open_fixture("popup-lab.html")
+        self.browser.execute_script("""
+            const style = document.createElement('style');
+            style.textContent = '.modal-ubboard-notice { visibility: hidden !important; }';
+            document.head.append(style);
+            window.__platoNoticeEarly = {active:true, ready:true, onClick: () => {}};
+        """)
+        self.click("nested")
+        self.browser.execute_script("PlatoNotice.handle(true)")
+        self.assertEqual(self.state()["permanent"], 0)
+        self.assertEqual(self.state()["dialogs"], 1)
+        self.assertTrue(self.browser.find_element(By.CSS_SELECTOR, ".modal:not(.modal-ubboard-notice)").is_displayed())
+
     def test_mock_assignment_end_to_end(self):
         self.open_fixture("assignment-flow.html")
         self.click("start")
@@ -103,6 +147,9 @@ class FixtureBrowserTest(unittest.TestCase):
     def test_both_calendars_render_exact_time_without_duplicate_done_badge(self):
         self.open_fixture("calendar-lab.html")
         result = self.browser.execute_script("return runCalendarFixture()")
+        screenshot = ROOT / "dist" / "e2e" / "calendar-detail-1100x900.png"
+        screenshot.parent.mkdir(parents=True, exist_ok=True)
+        self.browser.save_screenshot(str(screenshot))
         for site in ("plato", "bbits"):
             data = result[site]
             self.assertEqual(len(data["due"]), 3)
@@ -110,6 +157,15 @@ class FixtureBrowserTest(unittest.TestCase):
             self.assertEqual(data["completed"], 1)
             self.assertTrue(any("23:55" in text for text in data["periods"]))
             self.assertTrue(any("23:59:59" in text for text in data["periods"]))
+            self.assertTrue(all(text.startswith("마감: ") for text in data["periods"]))
+        wording = self.browser.execute_script("""
+            return CalendarTime.formatPeriod({
+              startAt: CalendarTime.parse('2026-10-08 09:00').at,
+              dueAt: CalendarTime.parse('2026-10-13 23:59').at,
+              startTimePrecision: 'minute', timePrecision: 'minute'
+            }, 2026, 10);
+        """)
+        self.assertEqual(wording, "수강 기간: 10월 8일(목) 09:00 ~ 10월 13일(화) 23:59")
         self.browser.set_window_size(390, 844)
         self.assertTrue(self.browser.execute_script("""
             return [...document.querySelectorAll('.plato-task-card')].every(card =>

@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <title>PLATO 초기 공지 표시 테스트</title>
+  <style id="early-notice-style">.modal-ubboard-notice { visibility: hidden !important; }</style>
+  <script>
+    window.fixtureNotice = { initialVisibility: null, permanent: 0 };
+    window.__platoNoticeEarly = {
+      active: true, enabled: true, ready: false, clicked: false,
+      settled() { return !document.querySelector('.modal-ubboard-notice'); },
+      finish() { this.active = false; document.querySelector('#early-notice-style')?.remove(); },
+      onClick() { this.clicked = true; setTimeout(() => { if (this.settled()) this.finish(); }, 0); }
+    };
+  </script>
+  <script src="../../notice.js"></script>
+</head>
+<body>
+  <main>익명화한 홈 공지 첫 표시 테스트</main>
+  <div id="stage"></div>
+  <script>
+    setTimeout(() => {
+      const wrapper = document.createElement('div');
+      wrapper.className = 'modal modal-ubboard-notice show';
+      wrapper.innerHTML = `<div id="popup-splide"><div class="splide__slide">익명 공지</div>
+        <div class="popup-footer"><button class="btn-not-show-again" data-not-show-type="2">더 이상 보지 않음</button></div></div>`;
+      wrapper.querySelector('button').addEventListener('click', () => {
+        window.fixtureNotice.permanent++;
+        wrapper.remove();
+      });
+      document.querySelector('#stage').append(wrapper);
+      window.fixtureNotice.initialVisibility = getComputedStyle(wrapper).visibility;
+    }, 80);
+  </script>
+</body>
+</html>

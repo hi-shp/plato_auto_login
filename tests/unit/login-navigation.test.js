@@ -46,13 +46,14 @@ function runPage(url, values = {}, storage = new Map(), options = {}) {
 }
 
 function click(page, href, extra = {}) {
+  const { label = href === '/' ? '홈' : '활동', menu = href === '/', target = null, ...event } = extra;
   const link = {
-    getAttribute: key => key === 'href' ? href : null,
+    getAttribute: key => key === 'href' ? href : key === 'target' ? target : null,
     hasAttribute: () => false,
-    querySelector: () => null, textContent: href === '/' ? '홈' : '활동',
-    classList: { contains: () => true }
+    querySelector: () => null, textContent: label,
+    classList: { contains: value => menu && value === 'btn-channel' }
   };
-  page.listeners.click({ isTrusted: true, button: 0, target: { closest: () => link }, ...extra });
+  page.listeners.click({ isTrusted: true, button: 0, target: { closest: () => link }, ...event });
 }
 
 test('first automatic login without a destination goes to the course page', () => {
@@ -148,6 +149,35 @@ test('normal Home click and normal course navigation are left alone', () => {
   click(runPage(course, {}, state), '/');
   assert.deepEqual(runPage(`${base}/`, { platoCalendarToggle: true }, state).redirects, []);
   assert.deepEqual(runPage(`${base}/course/view.php?id=10`, {}, state).redirects, []);
+});
+
+for (const path of ['/course/view.php?id=9', '/mod/assign/view.php?id=9',
+  '/mod/assign/submission.php?id=9', '/mod/vod/view.php?id=9',
+  '/mod/quiz/view.php?id=9', '/message/index.php', '/calendar/view.php']) {
+  test(`Home menu from ${path} stays at Home`, () => {
+    const state = new Map();
+    click(runPage(`${base}${path}`, {}, state), '/');
+    assert.deepEqual(runPage(`${base}/`, { platoCalendarToggle: true }, state).redirects, []);
+    assert.equal(state.has('plato_home_clicked_from_course'), false);
+  });
+}
+
+test('unrelated root link and background Home clicks do not mark this tab', () => {
+  for (const extra of [{label:'다른 링크', menu:false}, {ctrlKey:true},
+    {button:1}, {target:'_blank'}]) {
+    const state = new Map();
+    click(runPage(task, {}, state), '/', extra);
+    assert.deepEqual(runPage(`${base}/`, { platoCalendarToggle: true }, state).redirects, [course]);
+  }
+});
+
+test('Home click from an assignment survives session expiry', () => {
+  const state = new Map();
+  click(runPage(task, {}, state), '/');
+  runPage(task, { userId: 'fixture', userPw: 'fixture' }, state, { sessionModal: true });
+  assert.equal(JSON.parse(state.get('plato_login_intent')).url, `${base}/`);
+  assert.deepEqual(runPage(`${base}/message/index.php`, {}, state).redirects, [`${base}/`]);
+  assert.deepEqual(runPage(`${base}/`, { platoCalendarToggle: true }, state).redirects, []);
 });
 
 test('login failure does not redirect or consume the destination', () => {
