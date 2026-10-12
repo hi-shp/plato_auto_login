@@ -1,6 +1,6 @@
 """Validate and reproducibly package the unpacked Chrome extension.
 
-Run from any directory: python scripts/release.py
+Run from any directory: python scripts/release.py (full regression gate first)
 Use --check to validate without creating a ZIP, or --verify to verify an existing ZIP.
 """
 
@@ -28,7 +28,6 @@ FORBIDDEN_PARTS = {".git", ".agents", ".codex", "dist", "tests", "__pycache__", 
 FORBIDDEN_NAMES = {"agents.md", "claude.md", "gemini.md", "readme.md", "changelog.md", ".env"}
 VERSION_RE = re.compile(r"\d+(?:\.\d+){0,3}\Z")
 DATE_VERSION_RE = re.compile(r"\d{4}\.\d{1,2}\.\d{1,2}\Z")
-LEGACY_VERSION = "2026.10.12.1"
 CSS_URL_RE = re.compile(r"url\(\s*['\"]?([^)'\"]+)['\"]?\s*\)|@import\s+['\"]([^'\"]+)['\"]", re.I)
 JS_ASSET_RE = re.compile(r"(?:chrome\.runtime\.getURL|importScripts|import\s*(?:\(|[^;]*?from\s*))\s*\(?\s*['\"]([^'\"]+)['\"]")
 
@@ -143,8 +142,8 @@ def validate_version(manifest: dict) -> str:
         fail(f"Invalid Chrome extension version: {version!r}")
     if any(int(part) > 65535 for part in version.split(".")):
         fail(f"Version component exceeds 65535: {version}")
-    if version != LEGACY_VERSION and not is_date_version(version):
-        fail(f"New extension versions must use YYYY.MM.DD: {version}")
+    if not is_date_version(version):
+        fail(f"Extension version must use YYYY.MM.DD: {version}")
     if "version_name" in manifest and manifest["version_name"] != version:
         fail("version_name must match version")
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
@@ -165,37 +164,12 @@ def is_date_version(version: str) -> bool:
         return False
 
 
-def previous_versions() -> set[str]:
-    versions = set()
-    if DIST.is_dir():
-        for package in DIST.glob("plato_auto_login_v*.zip"):
-            versions.add(package.stem.removeprefix("plato_auto_login_v"))
-    for revision in ("HEAD", "origin/main"):
-        result = subprocess.run(["git", "show", f"{revision}:manifest.json"], cwd=ROOT,
-                                capture_output=True, text=True, encoding="utf-8", errors="replace")
-        if result.returncode == 0:
-            try:
-                versions.add(json.loads(result.stdout)["version"])
-            except (json.JSONDecodeError, KeyError):
-                pass
-    return {version for version in versions if VERSION_RE.fullmatch(version)}
-
-
-def validate_packaging_version(version: str, package: Path, *, today: date | None = None,
-                               prior: set[str] | None = None) -> None:
+def validate_packaging_version(version: str, *, today: date | None = None) -> None:
     today = today or datetime.now(ZoneInfo("Asia/Seoul")).date()
     if not is_date_version(version):
-        fail(f"Cannot package historical v{version}: new releases require YYYY.MM.DD only")
+        fail(f"Cannot package v{version}: version must use YYYY.MM.DD")
     if version != today.strftime("%Y.%m.%d"):
         fail(f"Release version v{version} must equal today's Asia/Seoul date ({today:%Y.%m.%d})")
-    if package.exists():
-        return  # build_zip verifies that an existing same-version archive has identical sources.
-    prior = previous_versions() if prior is None else prior
-    current = tuple(map(int, version.split("."))) + (0,)
-    newest = max((tuple(map(int, item.split("."))) + (0,) * (4 - len(item.split(".")))
-                  for item in prior), default=None)
-    if newest is not None and current <= newest:
-        fail(f"Release v{version} is not higher than the previous local/Git version")
 
 
 def collect_files(manifest: dict) -> set[str]:
@@ -256,9 +230,11 @@ def validate_sources(files: set[str]) -> None:
     validate_popup(files)
 
 
-def verify_zip(package: Path, files: set[str]) -> None:
+def verify_zip(package: Path, files: set[str], expected_version: str | None = None) -> None:
     if not package.is_file():
         fail(f"ZIP does not exist: {package}")
+    if expected_version and package.name != f"plato_auto_login_v{expected_version}.zip":
+        fail(f"ZIP filename does not match manifest version v{expected_version}: {package.name}")
     with zipfile.ZipFile(package) as archive:
         names = archive.namelist()
         if len(names) != len(set(names)) or set(names) != files:
@@ -268,6 +244,8 @@ def verify_zip(package: Path, files: set[str]) -> None:
         inside_manifest = json.loads(archive.read("manifest.json"))
         if inside_manifest != json.loads((ROOT / "manifest.json").read_text(encoding="utf-8")):
             fail("ZIP manifest differs from local manifest")
+        if expected_version and inside_manifest.get("version") != expected_version:
+            fail(f"ZIP manifest version does not match filename: {package.name}")
         for name in names:
             if checked_path(name) != name:
                 fail(f"Unsafe ZIP entry: {name}")
@@ -275,14 +253,21 @@ def verify_zip(package: Path, files: set[str]) -> None:
                 fail(f"ZIP content differs from local source: {name}")
 
 
-def build_zip(package: Path, files: set[str]) -> None:
+def build_zip(package: Path, files: set[str], expected_version: str | None = None) -> None:
+    if expected_version and package.name != f"plato_auto_login_v{expected_version}.zip":
+        fail(f"ZIP filename does not match manifest version v{expected_version}: {package.name}")
     DIST.mkdir(exist_ok=True)
     if package.exists():
-        verify_zip(package, files)
-        print(f"Existing package verified: {package}")
-        return
+        try:
+            verify_zip(package, files, expected_version)
+        except (ValueError, OSError, json.JSONDecodeError, zipfile.BadZipFile):
+            pass  # Build a replacement only after its temporary ZIP passes validation.
+        else:
+            print(f"Existing package verified: {package}")
+            return
     with tempfile.NamedTemporaryFile(dir=DIST, suffix=".tmp", delete=False) as temp:
         temp_path = Path(temp.name)
+    backup_path = None
     try:
         with zipfile.ZipFile(temp_path, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
             for name in sorted(files):
@@ -291,10 +276,25 @@ def build_zip(package: Path, files: set[str]) -> None:
                 info.external_attr = 0o644 << 16
                 archive.writestr(info, (ROOT / name).read_bytes(), compress_type=zipfile.ZIP_DEFLATED, compresslevel=9)
         verify_zip(temp_path, files)
+        if package.exists():
+            with tempfile.NamedTemporaryFile(dir=DIST, suffix=".bak", delete=False) as backup:
+                backup_path = Path(backup.name)
+            shutil.copyfile(package, backup_path)
         temp_path.replace(package)
+        try:
+            verify_zip(package, files, expected_version)
+        except (ValueError, OSError, json.JSONDecodeError, zipfile.BadZipFile):
+            if backup_path:
+                restore_path = backup_path
+                backup_path = None
+                restore_path.replace(package)
+            else:
+                package.unlink(missing_ok=True)
+            raise
     finally:
         temp_path.unlink(missing_ok=True)
-    verify_zip(package, files)
+        if backup_path:
+            backup_path.unlink(missing_ok=True)
     print(f"Built and verified: {package} ({package.stat().st_size} bytes, {len(files)} files)")
 
 
@@ -303,7 +303,11 @@ def main() -> int:
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--check", action="store_true", help="validate sources only")
     mode.add_argument("--verify", action="store_true", help="verify the existing versioned ZIP")
+    mode.add_argument("--build-tested", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args()
+    if not (args.check or args.verify or args.build_tested):
+        return subprocess.run([sys.executable, str(ROOT / "scripts" / "verify.py"), "--package"],
+                              cwd=ROOT).returncode
     try:
         manifest = json.loads((ROOT / "manifest.json").read_text(encoding="utf-8"))
         version = validate_version(manifest)
@@ -311,13 +315,13 @@ def main() -> int:
         validate_sources(files)
         package = DIST / f"plato_auto_login_v{version}.zip"
         if args.verify:
-            verify_zip(package, files)
+            verify_zip(package, files, version)
             print(f"Verified: {package} ({package.stat().st_size} bytes, {len(files)} files)")
         elif args.check:
             print(f"Source validation passed: v{version}, {len(files)} extension files")
         else:
-            validate_packaging_version(version, package)
-            build_zip(package, files)
+            validate_packaging_version(version)
+            build_zip(package, files, version)
         return 0
     except (ValueError, OSError, json.JSONDecodeError, zipfile.BadZipFile) as error:
         print(f"Release validation failed: {error}", file=sys.stderr)

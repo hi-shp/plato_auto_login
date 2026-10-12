@@ -21,6 +21,7 @@
 | `사진/`, `plato.zip` | 기존 작업 자료와 이전 ZIP. 새 배포 ZIP에는 포함하지 않음. |
 
 릴리스 도구는 `node --check`로 JavaScript 구문을 검사합니다. `python scripts/verify.py`는 단위 테스트와 Selenium 브라우저 테스트를 함께 실행합니다. Chrome E2E는 임시 프로필에 테스트용 확장 프로그램을 WebDriver BiDi로 설치하고 로컬 LMS Fixture에서 실행합니다.
+manifest 버전과 ZIP 이름은 서울 날짜 `YYYY.MM.DD`를 사용합니다. 같은 날 다시 패키징할 때 `release.py`는 임시 ZIP을 먼저 검증하고 당일 ZIP을 교체합니다. 기존 세부 버전 ZIP은 과거 파일로 보존합니다.
 
 ## 주요 호출 흐름
 

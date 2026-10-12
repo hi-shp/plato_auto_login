@@ -1,4 +1,4 @@
-"""Run the required regression gate. Use --package only for a valid date-only release.
+"""Run the regression gate; --package safely rebuilds today's date-only ZIP.
 
 The browser suite uses isolated, anonymous fixtures and installs a temporary
 copy of this extension. It never submits coursework or uses saved credentials.
@@ -52,7 +52,7 @@ def run_group(name: str, command: list[str]) -> dict:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--package", action="store_true",
-                        help="after all tests pass, package only today's Asia/Seoul YYYY.MM.DD release")
+                        help="after all tests pass, verify and replace today's Asia/Seoul YYYY.MM.DD ZIP if sources changed")
     args = parser.parse_args()
     commands = [
         ("Release source and JavaScript syntax", [sys.executable, "scripts/release.py", "--check"]),
@@ -68,7 +68,7 @@ def main() -> int:
     outcomes = [run_group(name, command) for name, command in commands]
     if args.package:
         if all(item["status"] == "PASS" for item in outcomes):
-            outcomes.append(run_group("ZIP build and verification", [sys.executable, "scripts/release.py"]))
+            outcomes.append(run_group("ZIP build and verification", [sys.executable, "scripts/release.py", "--build-tested"]))
             if outcomes[-1]["status"] == "PASS":
                 outcomes.append(run_group("ZIP recheck", [sys.executable, "scripts/release.py", "--verify"]))
         else:

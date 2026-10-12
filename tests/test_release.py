@@ -59,33 +59,69 @@ class ReleaseTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "differs from local source"):
             release.verify_zip(package, files)
 
-    def test_date_only_release_after_legacy_version(self):
-        package = self.root / "dist" / "plato_auto_login_v2026.10.13.zip"
-        release.validate_packaging_version("2026.10.13", package,
-                                           today=date(2026, 10, 13), prior={"2026.10.12.1"})
-        with self.assertRaisesRegex(ValueError, "YYYY.MM.DD only"):
-            release.validate_packaging_version("2026.10.12.1", package,
-                                               today=date(2026, 10, 12), prior=set())
+    def test_release_version_must_equal_seoul_date(self):
+        release.validate_packaging_version("2026.10.12", today=date(2026, 10, 12))
+        with self.assertRaisesRegex(ValueError, "YYYY.MM.DD"):
+            release.validate_packaging_version("2026.10.12.1", today=date(2026, 10, 12))
         with self.assertRaisesRegex(ValueError, "Asia/Seoul date"):
-            release.validate_packaging_version("2026.10.13", package,
-                                               today=date(2026, 10, 12), prior={"2026.10.12.1"})
-        with self.assertRaisesRegex(ValueError, "not higher"):
-            release.validate_packaging_version("2026.10.12", package,
-                                               today=date(2026, 10, 12), prior={"2026.10.12.1"})
-        with self.assertRaisesRegex(ValueError, "not higher"):
-            release.validate_packaging_version("2026.10.13", package,
-                                               today=date(2026, 10, 13), prior={"2026.10.13"})
+            release.validate_packaging_version("2026.10.13", today=date(2026, 10, 12))
 
-    def test_only_existing_legacy_version_can_pass_source_validation(self):
-        (self.root / "README.md").write_text("* **v2026.10.12.1**: archived release\n", encoding="utf-8")
-        self.manifest["version"] = "2026.10.12.1"
-        self.assertEqual(release.validate_version(self.manifest), "2026.10.12.1")
+    def test_fourth_component_and_invalid_date_rejected(self):
+        (self.root / "README.md").write_text("* **v2026.10.12**: current release\n", encoding="utf-8")
+        self.manifest["version"] = "2026.10.12"
+        self.assertEqual(release.validate_version(self.manifest), "2026.10.12")
         self.manifest["version"] = "2026.10.13.1"
         with self.assertRaisesRegex(ValueError, "YYYY.MM.DD"):
             release.validate_version(self.manifest)
         self.manifest["version"] = "2026.02.30"
         with self.assertRaisesRegex(ValueError, "YYYY.MM.DD"):
             release.validate_version(self.manifest)
+
+    def test_same_day_zip_is_replaced_only_after_verification(self):
+        self.manifest["version"] = "2026.10.12"
+        (self.root / "manifest.json").write_text(json.dumps(self.manifest), encoding="utf-8")
+        package = self.root / "dist" / "plato_auto_login_v2026.10.12.zip"
+        legacy = self.root / "dist" / "plato_auto_login_v2026.10.12.1.zip"
+        package.parent.mkdir()
+        legacy.write_bytes(b"historical package")
+        files = release.collect_files(self.manifest)
+        release.build_zip(package, files, "2026.10.12")
+        original = package.read_bytes()
+        release.build_zip(package, files, "2026.10.12")
+        self.assertEqual(package.read_bytes(), original)
+
+        changed = 'document.getElementById("name"); const changed = true;'
+        (self.root / "popup.js").write_text(changed, encoding="utf-8")
+        original_verify = release.verify_zip
+
+        def reject_temporary(path, included, expected_version=None):
+            if path.suffix == ".tmp":
+                raise ValueError("simulated candidate validation failure")
+            return original_verify(path, included, expected_version)
+
+        with patch.object(release, "verify_zip", side_effect=reject_temporary):
+            with self.assertRaisesRegex(ValueError, "candidate validation failure"):
+                release.build_zip(package, files, "2026.10.12")
+        self.assertEqual(package.read_bytes(), original)
+
+        release.build_zip(package, files, "2026.10.12")
+        self.assertNotEqual(package.read_bytes(), original)
+        release.verify_zip(package, files, "2026.10.12")
+        verified = package.read_bytes()
+        (self.root / "popup.js").write_text(changed + "\nconst again = true;", encoding="utf-8")
+
+        def reject_final(path, included, expected_version=None):
+            if path == package and path.read_bytes() != verified:
+                raise ValueError("simulated final validation failure")
+            return original_verify(path, included, expected_version)
+
+        with patch.object(release, "verify_zip", side_effect=reject_final):
+            with self.assertRaisesRegex(ValueError, "final validation failure"):
+                release.build_zip(package, files, "2026.10.12")
+        self.assertEqual(package.read_bytes(), verified)
+        self.assertEqual(legacy.read_bytes(), b"historical package")
+        with self.assertRaisesRegex(ValueError, "filename does not match"):
+            release.verify_zip(package, files, "2026.10.13")
 
 
 if __name__ == "__main__":
