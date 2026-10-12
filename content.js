@@ -2502,15 +2502,58 @@ const BbitsCalendar = {
 };
 
 const PLATO_COURSE_URL = 'https://plato.pusan.ac.kr/local/ubion/allcourse/regular/index.php';
+const PLATO_LOGIN_INTENT_KEY = 'plato_login_intent';
+const PLATO_LOGIN_MAX_AGE_MS = 5 * 60 * 1000;
+const safePlatoTarget = (raw) => {
+  if (!raw) return null;
+  try {
+    const target = new URL(raw, window.location.href);
+    if (target.protocol !== 'https:' || target.hostname !== 'plato.pusan.ac.kr' ||
+        target.username || target.password || target.port ||
+        /^\/(?:login(?:\/|\.php|$)|auth\/|sso\/)/i.test(target.pathname)) return null;
+    return target.href;
+  } catch (_) {
+    return null;
+  }
+};
+const getPlatoLoginIntent = () => {
+  try {
+    const intent = JSON.parse(sessionStorage.getItem(PLATO_LOGIN_INTENT_KEY) || 'null');
+    const url = safePlatoTarget(intent?.url);
+    if (url && Number.isFinite(intent.createdAt) && Date.now() - intent.createdAt >= 0 &&
+        Date.now() - intent.createdAt <= PLATO_LOGIN_MAX_AGE_MS &&
+        ['click', 'session', 'direct'].includes(intent.reason)) return { ...intent, url };
+  } catch (_) {}
+  sessionStorage.removeItem(PLATO_LOGIN_INTENT_KEY);
+  return null;
+};
+const rememberPlatoLoginIntent = (raw, reason) => {
+  const url = safePlatoTarget(raw);
+  if (!url) return null;
+  const current = getPlatoLoginIntent();
+  const priority = { click: 3, session: 2, direct: 1 };
+  if (current && priority[current.reason] > priority[reason]) return current.url;
+  const intent = { url, reason, createdAt: Date.now() };
+  sessionStorage.setItem(PLATO_LOGIN_INTENT_KEY, JSON.stringify(intent));
+  return url;
+};
+const clearPlatoLoginAttempt = () => {
+  sessionStorage.removeItem('plato_auto_login_pending');
+  sessionStorage.removeItem(PLATO_LOGIN_INTENT_KEY);
+};
+const isSamePlatoPage = (first, second) => {
+  const a = new URL(first);
+  const b = new URL(second);
+  return a.origin === b.origin && a.pathname === b.pathname && a.search === b.search;
+};
 const markPlatoAutoLogin = () => {
   sessionStorage.setItem('plato_auto_login_pending', String(Date.now()));
-  sessionStorage.removeItem('plato_home_clicked_from_course');
 };
 const hasRecentPlatoAutoLogin = () => {
   const started = Number(sessionStorage.getItem('plato_auto_login_pending'));
   if (!started) return false;
-  if (Date.now() - started > 5 * 60 * 1000) {
-    sessionStorage.removeItem('plato_auto_login_pending');
+  if (Date.now() - started < 0 || Date.now() - started > PLATO_LOGIN_MAX_AGE_MS) {
+    clearPlatoLoginAttempt();
     return false;
   }
   return true;
@@ -2718,6 +2761,7 @@ const attemptLogin = () => {
           if (/활동이\s*없어\s*로그아웃|세션\s*만료|다시\s*로그인해\s*주세요|로그아웃되었습니다/i.test(modalText)) {
             if (!modal.dataset.sessionReLoginTriggered) {
               modal.dataset.sessionReLoginTriggered = "1";
+              if (isPlato) rememberPlatoLoginIntent(href, 'session');
 
               // "다시 로그인" 버튼 우선 검색 및 클릭
               const reloginBtn = modal.querySelector('button[data-action="save"], button.btn-primary, a[href*="login"]') ||
@@ -2741,7 +2785,7 @@ const attemptLogin = () => {
                   }
                   const targetLoginUrl = isDevPlato
                     ? `https://${host}/login.php?wantsurl=${encodeURIComponent(currentUrl)}`
-                    : `https://plato.pusan.ac.kr/login/index.php?wantsurl=${encodeURIComponent(PLATO_COURSE_URL)}`;
+                    : `https://plato.pusan.ac.kr/login/index.php?wantsurl=${encodeURIComponent(getPlatoLoginIntent()?.url || PLATO_COURSE_URL)}`;
                   window.location.href = targetLoginUrl;
                 }
               }, 500);
@@ -2757,6 +2801,7 @@ const attemptLogin = () => {
         if (directSaveBtn) {
           directSaveBtn.dataset.sessionClicked = "1";
           if (isPlato) {
+            rememberPlatoLoginIntent(href, 'session');
             markPlatoAutoLogin();
             sessionStorage.setItem('plato_need_calendar_refresh', '1');
           }
@@ -2770,7 +2815,7 @@ const attemptLogin = () => {
               }
               const targetLoginUrl = isDevPlato
                 ? `https://${host}/login.php?wantsurl=${encodeURIComponent(currentUrl)}`
-                : `https://plato.pusan.ac.kr/login/index.php?wantsurl=${encodeURIComponent(PLATO_COURSE_URL)}`;
+                : `https://plato.pusan.ac.kr/login/index.php?wantsurl=${encodeURIComponent(getPlatoLoginIntent()?.url || PLATO_COURSE_URL)}`;
               window.location.href = targetLoginUrl;
             }
           }, 500);
@@ -2786,6 +2831,9 @@ const attemptLogin = () => {
                           href.includes("login.php");
 
       if (isLoginPage) {
+        if (isPlato && !getPlatoLoginIntent()) {
+          rememberPlatoLoginIntent(new URL(href).searchParams.get('wantsurl'), 'direct');
+        }
         // 실제 비밀번호 불일치 오류 메시지 감지 시 무한 루프 방지 (errorcode=4 세션 만료 알림 등은 통과)
         const errText = (document.querySelector('.alert, .loginerrors, #notice, .notifyproblem')?.innerText || "").trim();
         if (/잘못된|불일치|일치하지|아이디 또는 비밀번호|invalid/i.test(errText)) {
@@ -2841,13 +2889,15 @@ const attemptLogin = () => {
         if (!isLoginPage) {
           if (!document.body.dataset.loginRedirecting) {
             document.body.dataset.loginRedirecting = "1";
-            if (isPlato) sessionStorage.removeItem('plato_home_clicked_from_course');
-            if (isPlato) markPlatoAutoLogin();
+            if (isPlato) {
+              if (path !== '/' && path !== '/index.php') rememberPlatoLoginIntent(href, 'direct');
+              markPlatoAutoLogin();
+            }
             let loginUrl;
             if (isDevPlato) {
               loginUrl = `https://${host}/login.php?wantsurl=${encodeURIComponent(href)}`;
             } else {
-              loginUrl = `https://plato.pusan.ac.kr/login/index.php?wantsurl=${encodeURIComponent(PLATO_COURSE_URL)}`;
+              loginUrl = `https://plato.pusan.ac.kr/login/index.php?wantsurl=${encodeURIComponent(getPlatoLoginIntent()?.url || PLATO_COURSE_URL)}`;
             }
             window.location.href = loginUrl;
             return;
@@ -2861,12 +2911,21 @@ const attemptLogin = () => {
 
         if (isPlato) {
           if (hasRecentPlatoAutoLogin()) {
-            if (!path.includes('/local/ubion/allcourse/')) {
-              window.location.replace(PLATO_COURSE_URL);
+            const destination = getPlatoLoginIntent()?.url || PLATO_COURSE_URL;
+            clearPlatoLoginAttempt();
+            if (!isSamePlatoPage(href, destination)) {
+              if (new URL(destination).pathname === '/') {
+                sessionStorage.setItem('plato_home_clicked_from_course', '1');
+              }
+              window.location.replace(destination);
               return;
             }
-            sessionStorage.removeItem('plato_auto_login_pending');
-            sessionStorage.removeItem('plato_home_clicked_from_course');
+            if (path === '/' || path === '/index.php') allowPlatoHomeThisPage = destination !== PLATO_COURSE_URL;
+          } else {
+            const intent = getPlatoLoginIntent();
+            if (intent && isSamePlatoPage(href, intent.url)) {
+              sessionStorage.removeItem(PLATO_LOGIN_INTENT_KEY);
+            }
           }
           // 플라토 메인 홈(/ 또는 /index.php)인 경우 처리
           // 교과과정 페이지에서 홈 버튼을 직접 누른 1회성 진입만 홈 유지 허용, 그 외(새로고침, 직링크 등)는 교과과정으로 자동 이동
@@ -2933,9 +2992,16 @@ const checkInterval = setInterval(() => {
 // 플라토 홈 버튼 클릭 감지: 교과과정 페이지에서 홈 버튼을 직접 클릭한 경우에만 1회성으로 홈 유지 허용
 if (window.location.hostname.includes("plato.pusan.ac.kr")) {
   document.addEventListener('click', (e) => {
-    const link = e.target.closest('a');
+    if (!e.isTrusted || e.defaultPrevented || e.button !== 0 ||
+        e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+    const link = e.target?.closest?.('a');
     if (!link) return;
     const href = link.getAttribute('href') || '';
+    if (link.getAttribute('target') === '_blank' || link.hasAttribute('download') ||
+        !href || href.startsWith('#')) return;
+    if (window.location.hostname === 'plato.pusan.ac.kr') {
+      rememberPlatoLoginIntent(href, 'click');
+    }
     const isHomeHref = href === '/' ||
                        href === '/index.php' ||
                        href === 'https://plato.pusan.ac.kr/' ||
@@ -2951,6 +3017,8 @@ if (window.location.hostname.includes("plato.pusan.ac.kr")) {
 
     if (isCoursePage && isHomeHref && (isHomeText || isHomeMenu || href === '/')) {
       sessionStorage.setItem('plato_home_clicked_from_course', '1');
+    } else {
+      sessionStorage.removeItem('plato_home_clicked_from_course');
     }
   }, true);
 }

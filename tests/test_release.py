@@ -1,6 +1,7 @@
 """Regression checks for release dependency discovery and ZIP integrity."""
 
 import json
+from datetime import date
 import sys
 import tempfile
 import unittest
@@ -57,6 +58,34 @@ class ReleaseTests(unittest.TestCase):
             release.validate_popup(files)
         with self.assertRaisesRegex(ValueError, "differs from local source"):
             release.verify_zip(package, files)
+
+    def test_date_only_release_after_legacy_version(self):
+        package = self.root / "dist" / "plato_auto_login_v2026.10.13.zip"
+        release.validate_packaging_version("2026.10.13", package,
+                                           today=date(2026, 10, 13), prior={"2026.10.12.1"})
+        with self.assertRaisesRegex(ValueError, "YYYY.MM.DD only"):
+            release.validate_packaging_version("2026.10.12.1", package,
+                                               today=date(2026, 10, 12), prior=set())
+        with self.assertRaisesRegex(ValueError, "Asia/Seoul date"):
+            release.validate_packaging_version("2026.10.13", package,
+                                               today=date(2026, 10, 12), prior={"2026.10.12.1"})
+        with self.assertRaisesRegex(ValueError, "not higher"):
+            release.validate_packaging_version("2026.10.12", package,
+                                               today=date(2026, 10, 12), prior={"2026.10.12.1"})
+        with self.assertRaisesRegex(ValueError, "not higher"):
+            release.validate_packaging_version("2026.10.13", package,
+                                               today=date(2026, 10, 13), prior={"2026.10.13"})
+
+    def test_only_existing_legacy_version_can_pass_source_validation(self):
+        (self.root / "README.md").write_text("* **v2026.10.12.1**: archived release\n", encoding="utf-8")
+        self.manifest["version"] = "2026.10.12.1"
+        self.assertEqual(release.validate_version(self.manifest), "2026.10.12.1")
+        self.manifest["version"] = "2026.10.13.1"
+        with self.assertRaisesRegex(ValueError, "YYYY.MM.DD"):
+            release.validate_version(self.manifest)
+        self.manifest["version"] = "2026.02.30"
+        with self.assertRaisesRegex(ValueError, "YYYY.MM.DD"):
+            release.validate_version(self.manifest)
 
 
 if __name__ == "__main__":

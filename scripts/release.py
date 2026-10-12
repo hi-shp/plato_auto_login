@@ -14,9 +14,11 @@ import subprocess
 import sys
 import tempfile
 import zipfile
+from datetime import date, datetime
 from html.parser import HTMLParser
 from pathlib import Path, PurePosixPath
 from urllib.parse import unquote, urlsplit
+from zoneinfo import ZoneInfo
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -24,7 +26,9 @@ DIST = ROOT / "dist"
 ASSET_EXTENSIONS = {".js", ".mjs", ".css", ".html", ".htm", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".ico", ".woff", ".woff2", ".ttf", ".json"}
 FORBIDDEN_PARTS = {".git", ".agents", ".codex", "dist", "tests", "__pycache__", ".cursor"}
 FORBIDDEN_NAMES = {"agents.md", "claude.md", "gemini.md", "readme.md", "changelog.md", ".env"}
-VERSION_RE = re.compile(r"(?:0|[1-9]\d*)(?:\.(?:0|[1-9]\d*)){0,3}\Z")
+VERSION_RE = re.compile(r"\d+(?:\.\d+){0,3}\Z")
+DATE_VERSION_RE = re.compile(r"\d{4}\.\d{1,2}\.\d{1,2}\Z")
+LEGACY_VERSION = "2026.10.12.1"
 CSS_URL_RE = re.compile(r"url\(\s*['\"]?([^)'\"]+)['\"]?\s*\)|@import\s+['\"]([^'\"]+)['\"]", re.I)
 JS_ASSET_RE = re.compile(r"(?:chrome\.runtime\.getURL|importScripts|import\s*(?:\(|[^;]*?from\s*))\s*\(?\s*['\"]([^'\"]+)['\"]")
 
@@ -139,6 +143,8 @@ def validate_version(manifest: dict) -> str:
         fail(f"Invalid Chrome extension version: {version!r}")
     if any(int(part) > 65535 for part in version.split(".")):
         fail(f"Version component exceeds 65535: {version}")
+    if version != LEGACY_VERSION and not is_date_version(version):
+        fail(f"New extension versions must use YYYY.MM.DD: {version}")
     if "version_name" in manifest and manifest["version_name"] != version:
         fail("version_name must match version")
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
@@ -146,6 +152,50 @@ def validate_version(manifest: dict) -> str:
     if not first_note or first_note.group(1) != version:
         fail(f"First README release note must be v{version}")
     return version
+
+
+def is_date_version(version: str) -> bool:
+    if not DATE_VERSION_RE.fullmatch(version):
+        return False
+    try:
+        year, month, day = map(int, version.split("."))
+        date(year, month, day)
+        return version == f"{year:04d}.{month:02d}.{day:02d}"
+    except ValueError:
+        return False
+
+
+def previous_versions() -> set[str]:
+    versions = set()
+    if DIST.is_dir():
+        for package in DIST.glob("plato_auto_login_v*.zip"):
+            versions.add(package.stem.removeprefix("plato_auto_login_v"))
+    for revision in ("HEAD", "origin/main"):
+        result = subprocess.run(["git", "show", f"{revision}:manifest.json"], cwd=ROOT,
+                                capture_output=True, text=True, encoding="utf-8", errors="replace")
+        if result.returncode == 0:
+            try:
+                versions.add(json.loads(result.stdout)["version"])
+            except (json.JSONDecodeError, KeyError):
+                pass
+    return {version for version in versions if VERSION_RE.fullmatch(version)}
+
+
+def validate_packaging_version(version: str, package: Path, *, today: date | None = None,
+                               prior: set[str] | None = None) -> None:
+    today = today or datetime.now(ZoneInfo("Asia/Seoul")).date()
+    if not is_date_version(version):
+        fail(f"Cannot package historical v{version}: new releases require YYYY.MM.DD only")
+    if version != today.strftime("%Y.%m.%d"):
+        fail(f"Release version v{version} must equal today's Asia/Seoul date ({today:%Y.%m.%d})")
+    if package.exists():
+        return  # build_zip verifies that an existing same-version archive has identical sources.
+    prior = previous_versions() if prior is None else prior
+    current = tuple(map(int, version.split("."))) + (0,)
+    newest = max((tuple(map(int, item.split("."))) + (0,) * (4 - len(item.split(".")))
+                  for item in prior), default=None)
+    if newest is not None and current <= newest:
+        fail(f"Release v{version} is not higher than the previous local/Git version")
 
 
 def collect_files(manifest: dict) -> set[str]:
@@ -266,6 +316,7 @@ def main() -> int:
         elif args.check:
             print(f"Source validation passed: v{version}, {len(files)} extension files")
         else:
+            validate_packaging_version(version, package)
             build_zip(package, files)
         return 0
     except (ValueError, OSError, json.JSONDecodeError, zipfile.BadZipFile) as error:

@@ -27,7 +27,7 @@
 - 팝업의 `DOMContentLoaded` → `chrome.storage.local.get`으로 계정·토글 복원 → 입력/변경 이벤트에서 `chrome.storage.local.set`. 캘린더 표시 토글의 기본값은 `true`입니다. 비밀번호 보기, GitHub·웹스토어 링크 클릭도 여기서 처리합니다.
 - `content.js` 로드 → `fixVp()`와 `attemptLogin()` 즉시 실행 → DOM 변경을 300ms로 묶는 `MutationObserver` 및 2초 간격 점검이 `attemptLogin()` 재호출. 확장 컨텍스트 무효화 시 중지합니다. 각 로그인 폼에는 `dataset.done`/`autoLoggingIn` 등의 중복 제출 표식을 사용합니다.
 - 학생지원시스템: `content.js`의 `RUN_PNU_FUNC` 이벤트 → MAIN world `event.js` → 사이트의 SSO/비밀번호 변경 안내 함수. `login.pusan.ac.kr`의 계정 입력과 `onestop.pusan.ac.kr`의 팝업 제거·SSO 버튼을 별도로 처리합니다.
-- PLATO: 일반 및 개발 도메인의 로그인 폼 탐색, 오류 메시지에 따른 재시도 중지, 세션 만료 재로그인. 정규 PLATO 자동 로그인은 교과과정으로 이동하고, 교과과정의 홈 메뉴를 직접 누른 경우 홈을 1회 유지합니다. `plato_auto_login_pending`, 홈 클릭 및 캘린더 새로고침 표식은 `sessionStorage`에 둡니다. `notice.js`는 홈의 `.modal-ubboard-notice #popup-splide`만 판별하여 사이트의 `data-not-show-type="2"` 버튼을 누르며 작업 대화상자를 보호합니다.
+- PLATO: 일반 및 개발 도메인의 로그인 폼 탐색, 오류 메시지에 따른 재시도 중지, 세션 만료 재로그인. 정규 도메인은 실제 사용자 클릭 URL → 세션 만료 전 페이지 → 기본 교과과정 순서로 로그인 후 목적지를 정합니다. `plato_login_intent`와 `plato_auto_login_pending`은 탭별 `sessionStorage`에 최대 5분 유지하고 목적지 도착 또는 복원 리다이렉트 시 정리합니다. 목적지는 HTTPS 정규 PLATO 호스트의 로그인·인증 경로 외로 제한하며 `wantsurl`에도 사용합니다. SSO 도메인을 거쳐 돌아와도 같은 탭의 PLATO 저장소를 읽습니다. 홈 클릭 표식과 캘린더 새로고침 표식 역시 `sessionStorage`에 있으며, 교과과정에서 직접 누른 홈은 1회 유지하고 홈 새로고침은 교과과정으로 이동합니다. 개발 도메인의 기존 URL 복원 동작은 유지합니다. `notice.js`는 홈의 `.modal-ubboard-notice #popup-splide`만 판별하여 사이트의 `data-not-show-type="2"` 버튼을 누르며 작업 대화상자를 보호합니다.
 - BBITS: `www.bbits.ac.kr` 모달과 `lms.bbits.ac.kr` 로그인 폼을 따로 처리하고 부산대학교 소속을 선택합니다. 로그인 후 LMS 대시보드에서 캘린더를 초기화합니다.
 
 ## 캘린더와 데이터

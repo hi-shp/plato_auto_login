@@ -1,4 +1,4 @@
-"""Run the required release regression gate. Use --package after updating the version.
+"""Run the required regression gate. Use --package only for a valid date-only release.
 
 The browser suite uses isolated, anonymous fixtures and installs a temporary
 copy of this extension. It never submits coursework or uses saved credentials.
@@ -52,7 +52,7 @@ def run_group(name: str, command: list[str]) -> dict:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--package", action="store_true",
-                        help="build and verify the versioned ZIP only after all tests pass")
+                        help="after all tests pass, package only today's Asia/Seoul YYYY.MM.DD release")
     args = parser.parse_args()
     commands = [
         ("Release source and JavaScript syntax", [sys.executable, "scripts/release.py", "--check"]),
@@ -80,7 +80,7 @@ def main() -> int:
                      "reason": "requires an installed updated extension, authenticated sessions, and safe live scenarios"})
     for item in outcomes:
         print(f"{item['status']:7} {item['name']} ({item['passed']}/{item['tests']})"
-              + (f" — {item['reason']}" if item["reason"] else ""))
+              + (f" - {item['reason']}" if item["reason"] else ""))
     passed = sum(item["passed"] for item in outcomes)
     failed = sum(item["failed"] for item in outcomes)
     not_run = sum(item["tests"] for item in outcomes if item["status"] == "NOT RUN")
