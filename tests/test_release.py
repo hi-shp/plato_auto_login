@@ -66,6 +66,27 @@ class ReleaseTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Asia/Seoul date"):
             release.validate_packaging_version("2026.10.13", today=date(2026, 10, 12))
 
+    def test_project_root_upload_package_and_version_validation(self):
+        files = release.collect_files(self.manifest)
+        package = self.root / "plato.zip"
+        release.build_zip(package, files, "2026.10.11")
+        release.verify_zip(package, files, "2026.10.11")
+        with self.assertRaisesRegex(ValueError, "manifest version does not match"):
+            release.verify_zip(package, files, "2026.10.12")
+        original = package.read_bytes()
+        (self.root / "content.js").write_text('const changed = true;', encoding="utf-8")
+        original_verify = release.verify_zip
+
+        def reject_candidate(path, included, expected_version=None):
+            if path.suffix == ".tmp":
+                raise ValueError("candidate verification failed")
+            return original_verify(path, included, expected_version)
+
+        with patch.object(release, "verify_zip", side_effect=reject_candidate):
+            with self.assertRaisesRegex(ValueError, "candidate verification failed"):
+                release.build_zip(package, files, "2026.10.11")
+        self.assertEqual(package.read_bytes(), original)
+
     def test_fourth_component_and_invalid_date_rejected(self):
         (self.root / "README.md").write_text("* **v2026.10.12**: current release\n", encoding="utf-8")
         self.manifest["version"] = "2026.10.12"

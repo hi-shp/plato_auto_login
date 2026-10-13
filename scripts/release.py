@@ -230,11 +230,18 @@ def validate_sources(files: set[str]) -> None:
     validate_popup(files)
 
 
+def validate_package_name(package: Path, version: str) -> None:
+    if package.resolve() == (ROOT / "plato.zip").resolve():
+        return
+    if package.name != f"plato_auto_login_v{version}.zip":
+        fail(f"ZIP filename does not match manifest version v{version}: {package.name}")
+
+
 def verify_zip(package: Path, files: set[str], expected_version: str | None = None) -> None:
     if not package.is_file():
         fail(f"ZIP does not exist: {package}")
-    if expected_version and package.name != f"plato_auto_login_v{expected_version}.zip":
-        fail(f"ZIP filename does not match manifest version v{expected_version}: {package.name}")
+    if expected_version:
+        validate_package_name(package, expected_version)
     with zipfile.ZipFile(package) as archive:
         names = archive.namelist()
         if len(names) != len(set(names)) or set(names) != files:
@@ -254,9 +261,9 @@ def verify_zip(package: Path, files: set[str], expected_version: str | None = No
 
 
 def build_zip(package: Path, files: set[str], expected_version: str | None = None) -> None:
-    if expected_version and package.name != f"plato_auto_login_v{expected_version}.zip":
-        fail(f"ZIP filename does not match manifest version v{expected_version}: {package.name}")
-    DIST.mkdir(exist_ok=True)
+    if expected_version:
+        validate_package_name(package, expected_version)
+    package.parent.mkdir(parents=True, exist_ok=True)
     if package.exists():
         try:
             verify_zip(package, files, expected_version)
@@ -265,7 +272,7 @@ def build_zip(package: Path, files: set[str], expected_version: str | None = Non
         else:
             print(f"Existing package verified: {package}")
             return
-    with tempfile.NamedTemporaryFile(dir=DIST, suffix=".tmp", delete=False) as temp:
+    with tempfile.NamedTemporaryFile(dir=package.parent, suffix=".tmp", delete=False) as temp:
         temp_path = Path(temp.name)
     backup_path = None
     try:
@@ -277,7 +284,7 @@ def build_zip(package: Path, files: set[str], expected_version: str | None = Non
                 archive.writestr(info, (ROOT / name).read_bytes(), compress_type=zipfile.ZIP_DEFLATED, compresslevel=9)
         verify_zip(temp_path, files)
         if package.exists():
-            with tempfile.NamedTemporaryFile(dir=DIST, suffix=".bak", delete=False) as backup:
+            with tempfile.NamedTemporaryFile(dir=package.parent, suffix=".bak", delete=False) as backup:
                 backup_path = Path(backup.name)
             shutil.copyfile(package, backup_path)
         temp_path.replace(package)
@@ -302,7 +309,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--check", action="store_true", help="validate sources only")
-    mode.add_argument("--verify", action="store_true", help="verify the existing versioned ZIP")
+    mode.add_argument("--verify", action="store_true", help="verify the project-root plato.zip")
     mode.add_argument("--build-tested", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args()
     if not (args.check or args.verify or args.build_tested):
@@ -313,7 +320,7 @@ def main() -> int:
         version = validate_version(manifest)
         files = collect_files(manifest)
         validate_sources(files)
-        package = DIST / f"plato_auto_login_v{version}.zip"
+        package = ROOT / "plato.zip"
         if args.verify:
             verify_zip(package, files, version)
             print(f"Verified: {package} ({package.stat().st_size} bytes, {len(files)} files)")

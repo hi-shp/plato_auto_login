@@ -5,7 +5,7 @@
 | 경로 | 역할 |
 | --- | --- |
 | `manifest.json` | Manifest V3 설정. `storage` 권한, 7개 사이트 URL의 host 권한, 팝업과 아이콘 지정. |
-| `notice-early.js` | 정규 PLATO 홈의 최상위 프레임에 `document_start`에서 로드. 공지 전용 임시 표시 억제와 설정 확인·실패 시 해제. |
+| `notice-early.js` | 정규 PLATO 홈 최상위 프레임의 `document_start`에서 공지 전용 표시 억제. 설정 ON 동안 유지하고 설정 변경·조회 실패·후속 스크립트 로딩 실패를 처리. |
 | `calendar-time.js`, `notice.js`, `content.js` | 순서대로 모든 허용 사이트의 모든 프레임에 `document_end`에서 로드. 서울 시간 기준 일정 계산, 확인된 PLATO 홈 공지 처리, 로그인·캘린더 처리. |
 | `event.js` | `login.pusan.ac.kr`와 `onestop.pusan.ac.kr`의 MAIN world에 `document_start`에서 로드. 페이지 함수 `ssoOpen`, `changeNextPw` 호출. |
 | `calendar.css` | `content.js`와 함께 주입. 두 캘린더 위젯 ID와 공통 `.plato-*` 클래스에 스타일 적용. |
@@ -18,19 +18,20 @@
 | `requirements-test.txt` | Chrome E2E 실행용 Python 패키지. 배포 ZIP에서는 제외. |
 | `tests/unit/`, `tests/fixtures/`, `tests/e2e/` | 시각·이동 단위 테스트, 익명화된 로컬 재현 페이지, Selenium Chrome 브라우저 테스트. 배포 ZIP에서는 제외. |
 | `TESTING.md` | 실제 사이트에서 확인한 범위와 모의 테스트 결과·한계. |
-| `dist/` | 로컬 웹스토어 제출 ZIP. Git 제외. |
+| `dist/` | 테스트·웹스토어 스크린샷 등 로컬 산출물. Git 제외. |
 | `.agents/rules/git-backup.md`, `AGENTS.md` | 로컬 전용 에이전트 작업 규칙. Git 제외. |
-| `사진/`, `plato.zip` | 기존 작업 자료와 이전 ZIP. 새 배포 ZIP에는 포함하지 않음. |
+| `plato.zip` | 프로젝트 루트의 최종 웹스토어 제출 패키지. Git 제외. |
+| `사진/` | 기존 사용자 작업 자료. 배포 ZIP에 포함하지 않음. |
 
 릴리스 도구는 `node --check`로 JavaScript 구문을 검사합니다. `python scripts/verify.py`는 단위 테스트와 Selenium 브라우저 테스트를 함께 실행합니다. Chrome E2E는 임시 프로필에 테스트용 확장 프로그램을 WebDriver BiDi로 설치하고 로컬 LMS Fixture에서 실행합니다.
-manifest 버전과 ZIP 이름은 서울 날짜 `YYYY.MM.DD`를 사용합니다. 같은 날 다시 패키징할 때 `release.py`는 임시 ZIP을 먼저 검증하고 당일 ZIP을 교체합니다. 기존 세부 버전 ZIP은 과거 파일로 보존합니다.
+manifest 버전은 서울 날짜 `YYYY.MM.DD`를 사용합니다. `release.py`는 임시 ZIP을 먼저 검증한 뒤 프로젝트 루트의 `plato.zip`을 안전하게 교체합니다. 파일명과 무관하게 ZIP 내부 manifest 버전과 현재 소스를 확인합니다.
 
 ## 주요 호출 흐름
 
 - 팝업의 `DOMContentLoaded` → `chrome.storage.local.get`으로 계정·토글 복원 → 입력/변경 이벤트에서 `chrome.storage.local.set`. 캘린더 표시 토글의 기본값은 `true`입니다. 비밀번호 보기, GitHub·웹스토어 링크 클릭도 여기서 처리합니다.
 - `content.js` 로드 → `fixVp()`와 `attemptLogin()` 즉시 실행 → DOM 변경을 300ms로 묶는 `MutationObserver` 및 2초 간격 점검이 `attemptLogin()` 재호출. 확장 컨텍스트 무효화 시 중지합니다. 각 로그인 폼에는 `dataset.done`/`autoLoggingIn` 등의 중복 제출 표식을 사용합니다.
 - 학생지원시스템: `content.js`의 `RUN_PNU_FUNC` 이벤트 → MAIN world `event.js` → 사이트의 SSO/비밀번호 변경 안내 함수. `login.pusan.ac.kr`의 계정 입력과 `onestop.pusan.ac.kr`의 팝업 제거·SSO 버튼을 별도로 처리합니다.
-- PLATO: 일반 및 개발 도메인의 로그인 폼 탐색, 오류 메시지에 따른 재시도 중지, 세션 만료 재로그인. 정규 도메인은 실제 사용자 클릭 URL → 세션 만료 전 페이지 → 기본 교과과정 순서로 로그인 후 목적지를 정합니다. `plato_login_intent`와 `plato_auto_login_pending`은 탭별 `sessionStorage`에 최대 5분 유지하고 목적지 도착 또는 복원 리다이렉트 시 정리합니다. 목적지는 HTTPS 정규 PLATO 호스트의 로그인·인증 경로 외로 제한하며 `wantsurl`에도 사용합니다. SSO 도메인을 거쳐 돌아와도 같은 탭의 PLATO 저장소를 읽습니다. 홈 클릭 표식과 캘린더 새로고침 표식 역시 `sessionStorage`에 있습니다. 모든 내부 페이지에서 실제 홈 메뉴를 누른 경우 홈을 1회 유지하고 홈 새로고침은 교과과정으로 이동합니다. 개발 도메인의 기존 URL 복원 동작은 유지합니다. `notice-early.js`는 홈 공지만 첫 표시 전에 숨기고, `notice.js`는 `.modal-ubboard-notice #popup-splide` 및 공식 `data-not-show-type="2"` 버튼을 확인해 처리합니다. 공식 처리 실패나 설정 OFF일 때 임시 숨김을 해제합니다.
+- PLATO: 일반 및 개발 도메인의 로그인 폼 탐색, 오류 메시지에 따른 재시도 중지, 세션 만료 재로그인. 정규 도메인은 실제 사용자 클릭 URL → 세션 만료 전 페이지 → 기본 교과과정 순서로 로그인 후 목적지를 정합니다. `plato_login_intent`와 `plato_auto_login_pending`은 탭별 `sessionStorage`에 최대 5분 유지하고 목적지 도착 또는 복원 리다이렉트 시 정리합니다. 목적지는 HTTPS 정규 PLATO 호스트의 로그인·인증 경로 외로 제한하며 `wantsurl`에도 사용합니다. SSO 도메인을 거쳐 돌아와도 같은 탭의 PLATO 저장소를 읽습니다. 홈 클릭 표식과 캘린더 새로고침 표식 역시 `sessionStorage`에 있습니다. 모든 내부 페이지에서 실제 홈 메뉴를 누른 경우 홈을 1회 유지하고 홈 새로고침은 교과과정으로 이동합니다. 개발 도메인의 기존 URL 복원 동작은 유지합니다. `notice-early.js`는 홈 공지만 첫 표시 전에 숨기고, `notice.js`는 `.modal-ubboard-notice #popup-splide` 및 공식 `data-not-show-type="2"` 버튼을 확인해 처리합니다. 설정 ON 동안 표시 억제를 유지하고 Splide 초기화 후 공식 버튼을 실행합니다. 실패한 요청은 간격을 늘려 재시도하며 캐러셀 제거 후에만 완료로 기록합니다. 설정 OFF·설정 조회 실패·후속 스크립트 누락은 표시 억제를 해제합니다.
 - BBITS: `www.bbits.ac.kr` 모달과 `lms.bbits.ac.kr` 로그인 폼을 따로 처리하고 부산대학교 소속을 선택합니다. 로그인 후 LMS 대시보드에서 캘린더를 초기화합니다.
 
 ## 캘린더와 데이터

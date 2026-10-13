@@ -52,7 +52,7 @@ def run_group(name: str, command: list[str]) -> dict:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--package", action="store_true",
-                        help="after all tests pass, verify and replace today's Asia/Seoul YYYY.MM.DD ZIP if sources changed")
+                        help="after all tests pass, verify and replace project-root plato.zip with today's date version")
     args = parser.parse_args()
     commands = [
         ("Release source and JavaScript syntax", [sys.executable, "scripts/release.py", "--check"]),

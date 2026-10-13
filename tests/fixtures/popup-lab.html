@@ -29,7 +29,7 @@
     <button id="run" type="button">자동 처리 실행</button>
     <button id="reset" type="button">Reset</button>
   </div>
-  <div id="stage"></div>
+  <div id="stage" class="ubboard-popup"></div>
   <h2>클릭 기록</h2><div id="log"></div>
   <script src="../../notice.js"></script>
   <script>
@@ -50,7 +50,7 @@
         wrapper.className = 'modal modal-ubboard-notice show';
         wrapper.setAttribute('role', 'dialog');
         wrapper.dataset.fixtureId = String(++nextId);
-        wrapper.innerHTML = `<div id="popup-splide"><div class="splide__slide"><p>익명화된 학사 공지</p>
+        wrapper.innerHTML = `<div id="popup-splide" class="splide is-initialized"><div class="splide__slide"><p>익명화된 학사 공지</p>
           <button class="btn-close" data-bs-dismiss="modal" type="button">닫기</button></div>
           <div class="popup-footer"><div class="view-options">
           <button class="btn-not-show-again" data-not-show-type="1" type="button">오늘 하루 그만 보기</button>

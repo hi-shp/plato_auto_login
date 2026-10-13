@@ -7,22 +7,20 @@
   <script>
     window.fixtureNotice = { initialVisibility: null, permanent: 0 };
     window.__platoNoticeEarly = {
-      active: true, enabled: true, ready: false, clicked: false,
-      settled() { return !document.querySelector('.modal-ubboard-notice'); },
-      finish() { this.active = false; document.querySelector('#early-notice-style')?.remove(); },
-      onClick() { this.clicked = true; setTimeout(() => { if (this.settled()) this.finish(); }, 0); }
+      active: true, enabled: true, ready: false,
+      apply() {}
     };
   </script>
   <script src="../../notice.js"></script>
 </head>
 <body>
   <main>익명화한 홈 공지 첫 표시 테스트</main>
-  <div id="stage"></div>
+  <div id="stage" class="ubboard-popup"></div>
   <script>
     setTimeout(() => {
       const wrapper = document.createElement('div');
       wrapper.className = 'modal modal-ubboard-notice show';
-      wrapper.innerHTML = `<div id="popup-splide"><div class="splide__slide">익명 공지</div>
+      wrapper.innerHTML = `<div id="popup-splide" class="splide is-initialized"><div class="splide__slide">익명 공지</div>
         <div class="popup-footer"><button class="btn-not-show-again" data-not-show-type="2">더 이상 보지 않음</button></div></div>`;
       wrapper.querySelector('button').addEventListener('click', () => {
         window.fixtureNotice.permanent++;

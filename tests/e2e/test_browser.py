@@ -85,13 +85,13 @@ class FixtureBrowserTest(unittest.TestCase):
     def test_async_notice_is_hidden_at_insertion_and_auto_processed(self):
         self.open_fixture("popup-first-paint.html")
         self.wait.until(lambda browser: browser.execute_script(
-            "return window.fixtureNotice.permanent === 1 && !window.__platoNoticeEarly.active"))
+            "return window.fixtureNotice.permanent === 1"))
         result = self.browser.execute_script("""
             return { initial: window.fixtureNotice.initialVisibility,
               active: window.__platoNoticeEarly.active,
               remaining: document.querySelectorAll('.modal-ubboard-notice').length };
         """)
-        self.assertEqual(result, {"initial": "hidden", "active": False, "remaining": 0})
+        self.assertEqual(result, {"initial": "hidden", "active": True, "remaining": 0})
 
     def test_concealed_notice_uses_official_button_without_hiding_other_dialogs(self):
         self.open_fixture("popup-lab.html")
@@ -99,7 +99,7 @@ class FixtureBrowserTest(unittest.TestCase):
             const style = document.createElement('style');
             style.textContent = '.modal-ubboard-notice { visibility: hidden !important; }';
             document.head.append(style);
-            window.__platoNoticeEarly = {active:true, ready:true,
+            window.__platoNoticeEarly = {active:true, enabled:true, ready:true,
                 onClick: () => { if (!document.querySelector('.modal-ubboard-notice')) style.remove(); }};
         """)
         self.click("notices")
@@ -118,7 +118,7 @@ class FixtureBrowserTest(unittest.TestCase):
             const style = document.createElement('style');
             style.textContent = '.modal-ubboard-notice { visibility: hidden !important; }';
             document.head.append(style);
-            window.__platoNoticeEarly = {active:true, ready:true, onClick: () => {}};
+            window.__platoNoticeEarly = {active:true, enabled:true, ready:true, onClick: () => {}};
         """)
         self.click("nested")
         self.browser.execute_script("PlatoNotice.handle(true)")
