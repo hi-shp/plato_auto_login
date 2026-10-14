@@ -1,5 +1,18 @@
 # 실사용 확인 및 재현 테스트
 
+## 탭별 로그인 목적지와 초기 홈 이동 (2026-10-14)
+
+- 최종 `python scripts/verify.py --package`: PASS 121, FAIL 0, NOT RUN 1(인증된 실사이트 로그인·세션 만료 종합 검사). JavaScript 단위 60개, 릴리스 리소스 6개, Chrome Fixture·확장 프로그램 E2E 51개와 구문·Git 공백·ZIP 생성·ZIP 재검증 각 1개가 통과했다. `2026.10.14`의 루트 `plato.zip`은 실행 파일 12개이며 소스와 일치한다.
+- 공개 변경 파일은 `manifest.json`, `content.js`, `navigation.js`, `navigation-worker.js`, `scripts/benchmark_login.py`, `tests/e2e/test_extension.py`, `tests/e2e/test_navigation_extension.py`, `tests/unit/login-navigation.test.js`, `tests/unit/navigation-worker.test.js`, `README.md`, `PROJECT_STRUCTURE.md`, `TESTING.md`, `LOGIN_PERFORMANCE.md`다. 로컬 에이전트 규칙은 Git과 ZIP에서 제외한다.
+- 기존 커밋 `7fecf0c`의 실제 확장 프로그램을 익명 Chrome에 설치해 캘린더 과제의 `target="_blank" rel="noopener noreferrer"` 클릭을 재현했다. 모의 서버가 과제 HTML 전에 HTTP 302로 로그인 페이지에 보내고 wantsurl을 주지 않으면 원래 과제 URL에 도착하지 못했다. 기존 단위 테스트는 같은 sessionStorage를 이동 후 페이지에 전달했으므로 이 새 탭 실패를 검출하지 못했다.
+- `navigation-worker.js`는 HTML 이전 탐색과 새 탭 URL을 탭 ID별 `storage.session`에 기록한다. `navigation.js`는 정규 PLATO의 document_start에서 목적지·설정을 병렬 조회한다. 클릭·직접 요청·세션 이전 페이지·기본 교과과정 순서로 선택하며 SSO 중간 페이지는 덮어쓰지 않는다. 기존 sessionStorage 키를 유지하고 정확한 경로·쿼리·fragment 도착 뒤 정리한다. 서비스 워커 강제 종료 후 복원, 빈 워커 상태로 구버전의 진행 중 로그인 의도 이전, 탭 종료 정리를 Chrome에서 검사했다.
+- `content.js`의 공지 클릭 후 반환을 제거했다. 로그인된 홈은 문서 종료·공지 요청·300ms DOM 디바운스를 기다리지 않고 이동할 수 있다. 직접 누른 홈은 유지하고 F5는 기존 교과과정 정책을 따른다. 기존 두 캘린더 소스는 수정 전과 바이트 단위로 동일하다. 날짜·시각 계산과 `수강 기간:`·`마감:` 표기를 변경하지 않았다.
+- `tests/e2e/test_navigation_extension.py`는 실제 Chrome에서 캘린더 과제·VOD 새 탭, 강좌 퀴즈 새 탭, 기존 탭 과제, 주소 탐색, bookmark 전환, 외부 링크, 세션 모달, 홈 만료·F5, 모든 내부 페이지 홈 메뉴, 여러 탭 동시 로그인, 초기 홈 공지 ON/OFF, SSO 중계, 로그인 실패, 403/404, 오래된 목적지, URL/숨김 필드 wantsurl, 외부 URL 거부, 서비스 워커 재시작과 탭 종료를 검사한다. bookmark 사례는 Chrome Page.navigate의 auto_bookmark 전환이며 실제 즐겨찾기 메뉴 조작은 아니다. 홈 rAF 및 새 탭 window.opener도 검사한다.
+- 테스트 보완 과정에서 설정 시드 페이지가 typed 전환으로 목적지에 들어가는 격리 오류와 부드러운 캘린더 스크롤 중 Ctrl 좌표 클릭 오류를 수정했다. 테스트 관리 경로는 임시 확장 프로그램의 모든 탐색 수집에서 제외하고 상태 초기화를 직렬화한다. Ctrl 클릭은 스크롤이 끝난 뒤 실제 브라우저 입력으로 실행한다. 제품 캘린더 스크롤 동작은 변경하지 않았다.
+- 성능은 2026.10.13과 수정본 각각 10조건·3회, 총 60회 측정했다. 인증 POST·SSO 50ms씩, 홈 파서 차단 250ms의 익명 서버 조건이다. warm·세션 만료·공지 ON·공지 있음의 홈 탐색 → 이동 요청 중앙값/P95는 999.7/1488.4 → 220.8/274.6ms, 교과과정 FCP는 1197.1/1661.7 → 338.5/495.5ms다. 스크립트 시작 → 이동 요청 중앙값은 450.7 → 43.1ms다. 전체 조건·단계·재현 방법은 [LOGIN_PERFORMANCE.md](./LOGIN_PERFORMANCE.md)에 기록했다. 실제 LMS 지연이나 사용자의 0.5초 증상을 같은 수치로 확인한 것은 아니다.
+- 최종 빌드에는 구버전 의도 이전·숨김 wantsurl·중계 URL 검증·새 의도에서 복원 제한 초기화가 반영돼 대표 조건을 버전별 3회 추가 확인했다. 홈 탐색 → 이동 요청 중앙값/P95는 827.8/881.1 → 156.4/160.7ms, 교과과정 FCP는 880.3/965.7 → 228.9/233.6ms, 스크립트 시작 → 요청 중앙값은 434.0 → 23.1ms다. 원시 자료는 `dist/e2e/login-performance-final.json`이며 전체 조건 60회와 최종 대표 조건 6회의 기록을 구분한다.
+- 일부 모의 홈 프레임은 여전히 관측됐다. 최초 홈 노출이 모든 조건에서 완전히 사라졌다고 판정하지 않는다. 실제 사용자 Chrome은 CDP focus 응답에 두 차례 시간 초과가 발생했고 별도 브라우저 연결도 실패했다. 이번 수정본의 실제 설치 버전·Moodle wantsurl·인증 SSO·실사이트 첫 프레임·서버 성능은 미검증이다. 실제 계정·원본 HTML·공지 내용·세션은 저장하지 않았고 로그아웃·과제 제출·시험 응시는 하지 않았다.
+
 ## PLATO 홈 공지 처리 재수정 (2026-10-13)
 
 - 최종 `python scripts/verify.py --package`: 전체 85개 중 PASS 84, FAIL 0, NOT RUN 1(인증된 실사이트 로그인·세션 만료). JavaScript 단위 50개, 릴리스 리소스 6개, Chrome Fixture·확장 프로그램 E2E 24개와 JavaScript 구문·Git 공백·ZIP 생성·ZIP 재검증 각 1개가 통과했습니다. 프로젝트 루트의 `plato.zip`을 검증된 `2026.10.13` 패키지로 교체했습니다.

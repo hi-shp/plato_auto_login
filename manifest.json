@@ -1,9 +1,10 @@
 {
   "manifest_version": 3,
   "name": "부산대학교 자동 로그인",
-  "version": "2026.10.13",
+  "version": "2026.10.14",
   "description": "PLATO & 학지시 & 공유대학 자동 로그인 프로그램",
-  "permissions": ["storage"],
+  "permissions": ["storage", "webNavigation"],
+  "background": { "service_worker": "navigation-worker.js" },
   "host_permissions": [
     "https://plato.pusan.ac.kr/*",
     "https://dev-plato.pusan.ac.kr/*",
@@ -21,7 +22,7 @@
   "content_scripts": [
     {
       "matches": ["https://plato.pusan.ac.kr/*"],
-      "js": ["notice-early.js"],
+      "js": ["navigation.js", "notice-early.js"],
       "run_at": "document_start"
     },
     {

@@ -103,7 +103,7 @@ def make_extension(directory: Path, *, baseline: bool = False, omit_helpers: boo
             (directory / name).write_bytes(subprocess.check_output(["git", "show", f"{BASELINE}:{name}"], cwd=ROOT))
     else:
         manifest = json.loads((ROOT / "manifest.json").read_text(encoding="utf-8"))
-        names = ["manifest.json", "calendar-time.js", "notice-early.js", "notice.js", "content.js", "calendar.css",
+        names = ["manifest.json", "calendar-time.js", "notice-early.js", "notice.js", "navigation.js", "navigation-worker.js", "content.js", "calendar.css",
                  "event.js", "favicon.png", "popup.html", "popup.js"]
         for name in names:
             shutil.copy2(ROOT / name, directory / name)

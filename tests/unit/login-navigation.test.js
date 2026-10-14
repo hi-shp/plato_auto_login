@@ -24,12 +24,14 @@ function runPage(url, values = {}, storage = new Map(), options = {}) {
   const body = { classList: { contains: value => value === (options.loggedIn === false ? 'notloggedin' : 'loggedin') }, dataset: {} };
   const modal = options.sessionModal ? { innerText: '세션 만료', dataset: {},
     querySelector: () => ({ click: () => {} }), querySelectorAll: () => [] } : null;
-  const document = { body, title: '',
-    querySelector: selector => selector.includes('.alert, .loginerrors') && options.loginError ? { innerText: '아이디 또는 비밀번호가 일치하지 않습니다' } : null,
+  const document = { body, title: options.continueUrl ? '리다이랙트' : '',
+    querySelector: selector => selector.startsWith('#region-main a[') && options.continueUrl
+      ? {href:options.continueUrl,click:()=>redirects.push(options.continueUrl)}
+      : selector.includes('.alert, .loginerrors') && options.loginError ? { innerText: '아이디 또는 비밀번호가 일치하지 않습니다' } : null,
     querySelectorAll: selector => selector.startsWith('.modal.show') && modal ? [modal] : [],
     addEventListener: (type, callback) => { listeners[type] = callback; } };
   const context = { window, document, location, CalendarTime,
-    PlatoNotice: { handle: () => 0 }, sessionStorage: {
+    PlatoNotice: { handle: () => options.noticeClicks || 0 }, sessionStorage: {
       getItem: key => storage.get(key) ?? null,
       setItem: (key, value) => storage.set(key, value),
       removeItem: key => storage.delete(key)
@@ -39,7 +41,7 @@ function runPage(url, values = {}, storage = new Map(), options = {}) {
     }) } } },
     MutationObserver: class { observe() {} disconnect() {} },
     setInterval: () => 1, clearInterval: () => {}, setTimeout: () => 1, clearTimeout: () => {},
-    console: { warn: () => {} }, Date, URL
+    console: { warn: () => {} }, Date, URL, URLSearchParams
   };
   vm.runInNewContext(source, context, { filename: 'content.js' });
   return { redirects, listeners, storage };
@@ -60,6 +62,8 @@ test('first automatic login without a destination goes to the course page', () =
   const state = new Map([['plato_auto_login_pending', String(Date.now())]]);
   const page = runPage(`${base}/message/index.php`, {}, state);
   assert.deepEqual(page.redirects, [course]);
+  assert.equal(state.has('plato_auto_login_pending'), true);
+  assert.deepEqual(runPage(course, {}, state).redirects, []);
   assert.equal(state.has('plato_auto_login_pending'), false);
 });
 
@@ -78,8 +82,9 @@ for (const [name, destination] of Object.entries({
     assert.equal(new URL(login.redirects[0]).searchParams.get('wantsurl'), destination);
     const intermediate = runPage(`${base}/message/index.php`, {}, state);
     assert.deepEqual(intermediate.redirects, [destination]);
-    assert.equal(state.has('plato_login_intent'), false);
+    assert.equal(state.has('plato_login_intent'), true);
     assert.deepEqual(runPage(destination, {}, state).redirects, []);
+    assert.equal(state.has('plato_login_intent'), false);
   });
 }
 
@@ -208,4 +213,29 @@ test('modified or background click does not alter this tab intent', () => {
   const page = runPage(course, {}, state);
   click(page, task, { ctrlKey: true });
   assert.equal(state.has('plato_login_intent'), false);
+});
+
+test('official notice button does not delay a decided home redirect', () => {
+  const state = new Map([['plato_auto_login_pending', String(Date.now())]]);
+  assert.deepEqual(runPage(`${base}/`, { platoCalendarToggle: true, platoPopupClose: true }, state,
+    { noticeClicks: 1 }).redirects, [course]);
+});
+
+test('direct URL outranks the previous page during session fallback', () => {
+  const state = new Map([['plato_login_intent', JSON.stringify({url:task,reason:'direct',createdAt:Date.now()})]]);
+  runPage(`${base}/course/view.php?id=10`, {userId:'fixture',userPw:'fixture'}, state, {sessionModal:true});
+  assert.equal(JSON.parse(state.get('plato_login_intent')).url, task);
+});
+
+test('an official intermediate continue link does not consume the original intent', () => {
+  const state = new Map([['plato_login_intent', JSON.stringify({url:task,reason:'click',createdAt:Date.now()})]]);
+  const next = base + '/auth/relay.php';
+  assert.deepEqual(runPage(base+'/login/index.php', {}, state, {loggedIn:false,continueUrl:next}).redirects, [next]);
+  assert.equal(JSON.parse(state.get('plato_login_intent')).url, task);
+});
+
+test('an external intermediate link containing the PLATO hostname is rejected', () => {
+  assert.deepEqual(runPage(base+'/login/index.php', {}, new Map(), {
+    loggedIn:false,continueUrl:'https://evil.example/?next=https://plato.pusan.ac.kr/'
+  }).redirects, []);
 });

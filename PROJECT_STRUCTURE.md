@@ -4,7 +4,9 @@
 
 | 경로 | 역할 |
 | --- | --- |
-| `manifest.json` | Manifest V3 설정. `storage` 권한, 7개 사이트 URL의 host 권한, 팝업과 아이콘 지정. |
+| `manifest.json` | Manifest V3 설정. `storage`·`webNavigation` 권한, 기존 7개 사이트 host 권한, 팝업·아이콘과 서비스 워커 지정. |
+| `navigation-worker.js` | HTML 도착 전 탐색 URL과 새 탭 목적지를 탭 ID별 `storage.session`에 보관. SSO 중간 페이지 보호, 정확한 도착 확인, 탭 종료 정리. |
+| `navigation.js` | 정규 PLATO 최상위 프레임의 `document_start`에서 목적지·설정을 병렬 조회. 로그인 상태가 확인되면 홈 공지와 캘린더 초기화를 기다리지 않고 이동. 실제 홈 메뉴 클릭은 보존. |
 | `notice-early.js` | 정규 PLATO 홈 최상위 프레임의 `document_start`에서 공지 전용 표시 억제. 설정 ON 동안 유지하고 설정 변경·조회 실패·후속 스크립트 로딩 실패를 처리. |
 | `calendar-time.js`, `notice.js`, `content.js` | 순서대로 모든 허용 사이트의 모든 프레임에 `document_end`에서 로드. 서울 시간 기준 일정 계산, 확인된 PLATO 홈 공지 처리, 로그인·캘린더 처리. |
 | `event.js` | `login.pusan.ac.kr`와 `onestop.pusan.ac.kr`의 MAIN world에 `document_start`에서 로드. 페이지 함수 `ssoOpen`, `changeNextPw` 호출. |
@@ -15,6 +17,7 @@
 | `scripts/release.py` | 정적 검증과 참조 파일 기반 ZIP 생성·검증. |
 | `scripts/verify.py` | 정적 검사, 단위·브라우저 회귀 검사와 선택적 ZIP 생성의 릴리스 품질 게이트. |
 | `scripts/benchmark_refresh.js` | 이전 버전과 현재 버전의 캘린더 첫 렌더링을 동일한 모의 응답 지연으로 비교. 실제 LMS에는 접속하지 않음. |
+| `scripts/benchmark_login.py`, `LOGIN_PERFORMANCE.md` | 격리 Chrome과 익명 인증 서버로 이전 릴리스·현재 소스의 로그인 이동 시간을 비교하고 측정 조건·한계를 기록. |
 | `requirements-test.txt` | Chrome E2E 실행용 Python 패키지. 배포 ZIP에서는 제외. |
 | `tests/unit/`, `tests/fixtures/`, `tests/e2e/` | 시각·이동 단위 테스트, 익명화된 로컬 재현 페이지, Selenium Chrome 브라우저 테스트. 배포 ZIP에서는 제외. |
 | `TESTING.md` | 실제 사이트에서 확인한 범위와 모의 테스트 결과·한계. |
@@ -31,8 +34,18 @@ manifest 버전은 서울 날짜 `YYYY.MM.DD`를 사용합니다. `release.py`�
 - 팝업의 `DOMContentLoaded` → `chrome.storage.local.get`으로 계정·토글 복원 → 입력/변경 이벤트에서 `chrome.storage.local.set`. 캘린더 표시 토글의 기본값은 `true`입니다. 비밀번호 보기, GitHub·웹스토어 링크 클릭도 여기서 처리합니다.
 - `content.js` 로드 → `fixVp()`와 `attemptLogin()` 즉시 실행 → DOM 변경을 300ms로 묶는 `MutationObserver` 및 2초 간격 점검이 `attemptLogin()` 재호출. 확장 컨텍스트 무효화 시 중지합니다. 각 로그인 폼에는 `dataset.done`/`autoLoggingIn` 등의 중복 제출 표식을 사용합니다.
 - 학생지원시스템: `content.js`의 `RUN_PNU_FUNC` 이벤트 → MAIN world `event.js` → 사이트의 SSO/비밀번호 변경 안내 함수. `login.pusan.ac.kr`의 계정 입력과 `onestop.pusan.ac.kr`의 팝업 제거·SSO 버튼을 별도로 처리합니다.
-- PLATO: 일반 및 개발 도메인의 로그인 폼 탐색, 오류 메시지에 따른 재시도 중지, 세션 만료 재로그인. 정규 도메인은 실제 사용자 클릭 URL → 세션 만료 전 페이지 → 기본 교과과정 순서로 로그인 후 목적지를 정합니다. `plato_login_intent`와 `plato_auto_login_pending`은 탭별 `sessionStorage`에 최대 5분 유지하고 목적지 도착 또는 복원 리다이렉트 시 정리합니다. 목적지는 HTTPS 정규 PLATO 호스트의 로그인·인증 경로 외로 제한하며 `wantsurl`에도 사용합니다. SSO 도메인을 거쳐 돌아와도 같은 탭의 PLATO 저장소를 읽습니다. 홈 클릭 표식과 캘린더 새로고침 표식 역시 `sessionStorage`에 있습니다. 모든 내부 페이지에서 실제 홈 메뉴를 누른 경우 홈을 1회 유지하고 홈 새로고침은 교과과정으로 이동합니다. 개발 도메인의 기존 URL 복원 동작은 유지합니다. `notice-early.js`는 홈 공지만 첫 표시 전에 숨기고, `notice.js`는 `.modal-ubboard-notice #popup-splide` 및 공식 `data-not-show-type="2"` 버튼을 확인해 처리합니다. 설정 ON 동안 표시 억제를 유지하고 Splide 초기화 후 공식 버튼을 실행합니다. 실패한 요청은 간격을 늘려 재시도하며 캐러셀 제거 후에만 완료로 기록합니다. 설정 OFF·설정 조회 실패·후속 스크립트 누락은 표시 억제를 해제합니다.
+- PLATO: 일반 및 개발 도메인의 로그인 폼 탐색, 오류 메시지에 따른 재시도 중지, 세션 만료 재로그인. 정규 도메인은 클릭 URL → 직접 요청 URL → 세션 만료 전 페이지 → 기본 교과과정 순서로 로그인 후 목적지를 정합니다. `plato_login_intent`와 `plato_auto_login_pending`은 탭별 `sessionStorage`에 최대 5분 유지하고 목적지 도착을 확인한 뒤 정리합니다. 목적지는 HTTPS 정규 PLATO 호스트의 로그인·인증 경로 외로 제한하며 `wantsurl`에도 사용합니다. SSO 도메인을 거쳐 돌아와도 같은 탭의 PLATO 저장소를 읽습니다. 홈 클릭 표식과 캘린더 새로고침 표식 역시 `sessionStorage`에 있습니다. 모든 내부 페이지에서 실제 홈 메뉴를 누른 경우 홈을 1회 유지하고 홈 새로고침은 교과과정으로 이동합니다. 개발 도메인의 기존 URL 복원 동작은 유지합니다. `notice-early.js`는 홈 공지만 첫 표시 전에 숨기고, `notice.js`는 `.modal-ubboard-notice #popup-splide` 및 공식 `data-not-show-type="2"` 버튼을 확인해 처리합니다. 설정 ON 동안 표시 억제를 유지하고 Splide 초기화 후 공식 버튼을 실행합니다. 실패한 요청은 간격을 늘려 재시도하며 캐러셀 제거 후에만 완료로 기록합니다. 설정 OFF·설정 조회 실패·후속 스크립트 누락은 표시 억제를 해제합니다.
 - BBITS: `www.bbits.ac.kr` 모달과 `lms.bbits.ac.kr` 로그인 폼을 따로 처리하고 부산대학교 소속을 선택합니다. 로그인 후 LMS 대시보드에서 캘린더를 초기화합니다.
+
+## 탭별 로그인 목적지 (2026-10-14)
+
+`webNavigation.onCreatedNavigationTarget`와 `onBeforeNavigate`에서 새 탭·직접 요청 URL을 HTML 도착 전에 포착한다. `onCommitted`의 서버 리다이렉트는 사용자 직접 요청으로 다시 기록하지 않는다. 현재 탭의 실제 클릭은 `navigation.js`가 기록한다. 우선순위는 클릭 → 직접 요청 → 이전 페이지 → 목적지 없는 첫 로그인의 교과과정이다. `noopener noreferrer`와 캘린더 카드 UI는 유지한다.
+
+서비스 워커의 `plato_navigation_[tabId]`에는 URL·의도·생성 시각·로그인/복원 상태와 이전 도착 페이지만 보관한다. 작업을 탭별 큐로 처리하고 5분 이상 지난 의도는 폐기한다. 서비스 워커 중단 이후에도 `storage.session`에서 복원하며 탭 종료 시 제거한다. 이 저장소는 브라우저 종료나 확장 프로그램 재로드·업데이트 때 초기화된다. 기존 `sessionStorage` 키는 호환성·대체 경로로 유지한다. 목적지는 이동 요청 때 지우지 않고 정확한 경로·쿼리·fragment에 도착한 뒤 정리한다. 복원 요청을 최대 2회로 제한해 루프를 방지한다. 외부 origin, 로그인·인증 경로, 인증정보를 담은 쿼리·fragment는 목적지로 허용하지 않는다.
+
+기존 문서 종료 단계 로그인 폼 처리는 유지한다. 로그인 페이지 URL 또는 기존 숨김 필드의 유효한 `wantsurl`을 사용할 수 있으며, 이미 보관한 클릭 의도가 우선한다. 로그인된 홈의 기본 이동은 `document_start`의 DOM 감시에서 시작할 수 있다. 홈 전체를 숨기지 않으며, 실제 홈 방문 시 공지 전용 처리가 계속 동작한다.
+
+API 동작 근거: [Chrome webNavigation](https://developer.chrome.com/docs/extensions/reference/api/webNavigation), [Chrome storage.session](https://developer.chrome.com/docs/extensions/reference/api/storage). 추가 권한은 `webNavigation` 하나다. `tabs`·`webRequest` 권한과 외부 공개 메시지 인터페이스는 추가하지 않는다.
 
 ## 캘린더와 데이터
 
