@@ -728,18 +728,47 @@ const PlatoCalendar = {
         }
       }
     });
+    // The regular curriculum DOM does not contain independently enrolled courses.
+    // Read the site's actual "My self courses" list, including its course names.
+    try {
+      const response = await this.fetchWithTimeout('https://plato.pusan.ac.kr/local/ubeclass/my.php');
+      if (response.ok && !(response.redirected && /\/login(?:\/|\.php)/.test(response.url))) {
+        const doc = new DOMParser().parseFromString(this.cleanHtmlForParsing(await response.text()), 'text/html');
+        doc.querySelectorAll('.coursename a[href*="/course/view.php?id="]').forEach(link => {
+          const url = new URL(link.getAttribute('href'), 'https://plato.pusan.ac.kr');
+          const id = url.searchParams.get('id');
+          const name = this.cleanCourseName(link.textContent);
+          const period = link.closest('.course-info')?.textContent.match(/\d{4}-\d{2}-\d{2}/g)?.slice(-2);
+          const semester = this.getSemesterMonths(this.viewMonth);
+          const first = `${this.viewYear}-${String(semester[0]).padStart(2, '0')}-01`;
+          const last = `${this.viewYear}-${String(semester.at(-1)).padStart(2, '0')}-31`;
+          if (period?.length === 2 && (period[1] < first || period[0] > last)) return;
+          if (url.origin === 'https://plato.pusan.ac.kr' && /^\d+$/.test(id || '') && name) {
+            coursesMap.set(id, { id, name, source: 'self' });
+          }
+        });
+      }
+    } catch (_) {
+      // A temporary list failure must not discard already discovered courses.
+      console.warn('Plato Calendar: self-course list unavailable');
+    }
     const courses = Array.from(coursesMap.values());
     this.cachedCourses = courses;
+    const cachedActivities = new Map(Object.values(this.monthCache)
+      .flatMap(data => Array.isArray(data?.activities) ? data.activities : [])
+      .filter(item => item?.modId).map(item => [item.modId, item]));
+    (this.cachedData?.activities || []).forEach(item => { if (item?.modId) cachedActivities.set(item.modId, item); });
 
     const statusResults = await Promise.all(courses.map(async (c) => {
       const info = { courseId: c.id, courseName: c.name, items: {} };
       try {
-        const [actRes, assignRes] = await Promise.all([
-          this.fetchWithTimeout(`https://plato.pusan.ac.kr/report/ublogs/student/activity.php?id=${c.id}`),
-          this.fetchWithTimeout(`https://plato.pusan.ac.kr/mod/assign/index.php?id=${c.id}`)
+        const [actRes, assignRes, courseRes] = await Promise.all([
+          this.fetchWithTimeout(`https://plato.pusan.ac.kr/report/ublogs/student/activity.php?id=${c.id}`).catch(() => null),
+          this.fetchWithTimeout(`https://plato.pusan.ac.kr/mod/assign/index.php?id=${c.id}`).catch(() => null),
+          c.source === 'self' ? this.fetchWithTimeout(`https://plato.pusan.ac.kr/course/view.php?id=${c.id}`).catch(() => null) : null
         ]);
 
-        if (actRes.ok) {
+        if (actRes?.ok) {
           const actText = await actRes.text();
           const cleanActText = this.cleanHtmlForParsing(actText);
           const actDoc = new DOMParser().parseFromString(cleanActText, 'text/html');
@@ -780,7 +809,7 @@ const PlatoCalendar = {
           });
         }
 
-        if (assignRes.ok) {
+        if (assignRes?.ok) {
           const assignText = await assignRes.text();
           const cleanAssignText = this.cleanHtmlForParsing(assignText);
           const assignDoc = new DOMParser().parseFromString(cleanAssignText, 'text/html');
@@ -826,6 +855,28 @@ const PlatoCalendar = {
                 }
               }
             }
+          });
+        }
+        if (courseRes?.ok) {
+          const doc = new DOMParser().parseFromString(this.cleanHtmlForParsing(await courseRes.text()), 'text/html');
+          // The official course dashboard exposes every VOD's full start/end
+          // period in one response, unlike the month-clipped calendar cells.
+          doc.querySelectorAll('.grid-row').forEach(row => {
+            const link = row.querySelector('.cell-activity a[href*="/mod/vod/view.php"]');
+            if (!link) return;
+            const url = new URL(link.getAttribute('href'), 'https://plato.pusan.ac.kr');
+            const id = url.searchParams.get('id');
+            if (url.origin !== 'https://plato.pusan.ac.kr' || !/^\d+$/.test(id || '')) return;
+            const points = CalendarTime.parseAll(row.querySelector('.cell-period')?.textContent || '');
+            if (points.length < 2) return; // A start alone is not a deadline.
+            const start = points[0], due = points.at(-1);
+            info.items[id] = { ...info.items[id], modId: id,
+              name: link.textContent.trim(), href: url.href, courseName: c.name, type: '강의',
+              isCompleted: info.items[id]?.isCompleted ?? cachedActivities.get(id)?.isCompleted ?? this.checkIsCompleted(row.querySelector('.cell-activity-status')?.textContent),
+              parsedPeriod: `${start.month}월 ${start.day}일 ~ ${due.month}월 ${due.day}일`,
+              startAt: start.at, startTimePrecision: start.precision,
+              dueAt: due.at, timePrecision: due.precision, originalDueText: due.original,
+              dueYear: due.year, dueMonth: due.month, dueDay: due.day };
           });
         }
       } catch (err) {
@@ -892,13 +943,13 @@ const PlatoCalendar = {
       if (reqId !== this.navRequestId || year !== this.viewYear || month !== this.viewMonth) return;
       if (before === JSON.stringify(this.timeCache)) {
         // The first render already used every cached precise time.
-        this.cachedData.timeEnriched = true;
+        this.cachedData.timeEnriched = !this.cachedData.hasUnresolvedDeadlines;
         chrome.storage.local.set({ plato_calendar_data: this.cachedData,
           plato_calendar_months: this.monthCache });
         return;
       }
       const data = this.parseCalendarDoc(calDoc, year, month, statusMaps);
-      data.timeEnriched = true;
+      data.timeEnriched = !data.hasUnresolvedDeadlines;
       this.cachedData = data;
       const key = `${year}_${month}`;
       this.monthCache[key] = data;
@@ -1004,10 +1055,51 @@ const PlatoCalendar = {
     return this.timeCache;
   },
 
+  reconcileDeadlineData(data) {
+    const { curYear, curMonth } = data;
+    const lastDay = new Date(curYear, curMonth, 0).getDate();
+    data.activities = (data.activities || []).filter(item => {
+      if (!item) return false;
+      const dates = [...String(item.parsedPeriod || '').matchAll(/(\d{1,2})월\s*(\d{1,2})일/g)];
+      if (!item.dueAt && dates.length) {
+        const end = dates.at(-1);
+        item.dueMonth = Number(end[1]);
+        item.dueDay = Number(end[2]);
+        const crossesYear = dates.length > 1 && Number(dates[0][1]) > item.dueMonth;
+        if (!Number.isInteger(item.dueYear)) {
+          item.dueYear = curYear + (crossesYear && curMonth >= Number(dates[0][1]) ? 1 : 0);
+        }
+      }
+      if (item.dueAt && typeof CalendarTime !== 'undefined') {
+        const due = CalendarTime.seoulParts(item.dueAt);
+        item.dueYear = due.year; item.dueMonth = due.month; item.dueDay = due.day;
+      }
+      if ((item.dueYear && item.dueYear !== curYear) || (item.dueMonth && item.dueMonth !== curMonth)) return false;
+      // A duration visible through the month's last cell may continue into
+      // another month. Do not invent a deadline from that clipped interval,
+      // including when repairing a previous version's persisted cache.
+      const vod = item.type === '강의' || /\/mod\/vod\//.test(item.href || '');
+      if (vod && !item.dueAt && !dates.length && !item.dueMonth &&
+          item.dueDay === lastDay && item.startDay < item.dueDay) {
+        data.hasUnresolvedDeadlines = true;
+        return false;
+      }
+      return true;
+    });
+    data.dayDueActivitiesMap = {};
+    data.activities.forEach(item => {
+      if (item.dueDay) (data.dayDueActivitiesMap[item.dueDay] ||= []).push(item);
+    });
+    (data.days || []).forEach(day => { if (day) day.events = data.dayDueActivitiesMap[day.day] || []; });
+    return data;
+  },
+
   parseCalendarDoc(calDoc, curYear, curMonth, statusMaps) {
     const globalStatusMap = statusMaps?.globalStatusMap || this.cachedStatusMap || {};
     const nameStatusMap = statusMaps?.nameStatusMap || this.cachedNameStatusMap || {};
     const timeMap = statusMaps?.timeMap || this.timeCache;
+    const previous = new Map((this.monthCache[`${curYear}_${curMonth}`]?.activities || [])
+      .filter(item => item?.modId).map(item => [item.modId, item]));
     const totalDays = new Date(curYear, curMonth, 0).getDate();
     const dayCells = calDoc.querySelectorAll('td.day');
 
@@ -1056,10 +1148,16 @@ const PlatoCalendar = {
             }
           }
 
+          if (!statusInfo && modId) statusInfo = previous.get(modId);
           const isCompleted = statusInfo ? statusInfo.isCompleted : false;
           const courseName = statusInfo ? statusInfo.courseName : (inferredCourseName || '교과과정');
           const parsedPeriod = statusInfo ? statusInfo.parsedPeriod : '';
-          const precise = modId ? (timeMap[modId] || (statusInfo?.dueAt ? statusInfo : null)) : null;
+          const cached = previous.get(modId);
+          const cachedTime = !statusInfo?.dueAt && !statusInfo?.parsedPeriod && cached?.dueAt ? {
+            startAt: cached.startAt, startTimePrecision: cached.startTimePrecision,
+            dueAt: cached.dueAt, timePrecision: cached.timePrecision, originalDueText: cached.originalDueText
+          } : null;
+          const precise = modId ? (timeMap[modId] || (statusInfo?.dueAt ? statusInfo : cachedTime)) : null;
 
           const ev = {
             day,
@@ -1154,7 +1252,7 @@ const PlatoCalendar = {
               eventId: '',
               modId: item.modId,
               comp: 'mod_activity',
-              type: item.name.includes('과제') ? '과제' : item.name.includes('퀴즈') ? '퀴즈' : '활동',
+              type: item.type || (/\/mod\/vod\//.test(item.href || '') ? '강의' : item.name.includes('과제') ? '과제' : item.name.includes('퀴즈') ? '퀴즈' : '활동'),
               title: item.name,
               href: item.href || '',
               isCompleted: item.isCompleted,
@@ -1177,11 +1275,8 @@ const PlatoCalendar = {
     }
 
     // A 24:00 deadline belongs to the following date/month.
-    const uniqueActivities = Array.from(uniqueMap.values()).filter(item => {
-      if (!item.dueAt) return true;
-      const due = CalendarTime.seoulParts(item.dueAt);
-      return due.year === curYear && due.month === curMonth;
-    });
+    const reconciled = this.reconcileDeadlineData({ curYear, curMonth, activities: Array.from(uniqueMap.values()) });
+    const uniqueActivities = reconciled.activities;
     uniqueActivities.forEach(item => CalendarTime.applyStatus(item, curYear, curMonth));
 
     const dayDueActivitiesMap = {};
@@ -1209,6 +1304,7 @@ const PlatoCalendar = {
       curMonth,
       days,
       activities: uniqueActivities,
+      hasUnresolvedDeadlines: !!reconciled.hasUnresolvedDeadlines,
       dayDueActivitiesMap
     };
   },
@@ -1216,6 +1312,7 @@ const PlatoCalendar = {
   render() {
     if (!this.cachedData) return;
     ensureMonthGridData(this.cachedData, this.viewYear, this.viewMonth);
+    this.reconcileDeadlineData(this.cachedData);
     if (typeof CalendarTime !== 'undefined') CalendarTime.refreshData(this.cachedData);
     const { curYear, curMonth, days } = this.cachedData;
 

@@ -49,6 +49,8 @@ API 동작 근거: [Chrome webNavigation](https://developer.chrome.com/docs/exte
 
 ## 캘린더와 데이터
 
+PLATO의 `fetchCourseStatuses()`는 교과과정 링크와 `/local/ubeclass/my.php`의 `.coursename a`를 합쳐 자율강좌의 ID·이름을 수집합니다. 자율강좌 목록에서 확인 가능한 기간이 현재 표시 학기와 겹치지 않으면 조회를 생략합니다. 자율강좌의 활동 현황과 공식 강좌 화면을 함께 읽고 `.grid-row .cell-activity`, `.cell-period`에서 VOD별 전체 시작·종료 시각을 얻습니다. 월간 HTML의 반복 일정을 묶은 마지막 날짜를 실제 마감일로 단정하지 않습니다. `reconcileDeadlineData()`가 월·연도 경계를 보정하고 검증되지 않은 월말 VOD 기간을 마감 셀에서 제외하며, 이전 캐시에도 같은 보정을 적용합니다. 확인된 일정은 일시적 조회 실패 시 재사용하고 새로 조회된 기간이 있으면 이를 우선합니다. 실제 시각이 초 단위로 확보되면 기존 상세 조회의 정밀도를 유지합니다.
+
 캘린더가 직접 삽입된 부모 영역에만 CSS `overflow-anchor: none`을 적용합니다. 비동기 삽입 높이가 Chrome의 재로딩 복원 위치에 더해지는 것을 막고, 위젯이 제거되면 자동 해제합니다. `prepareCalendarViewport()`는 탭별 `sessionStorage`에 마지막 스크롤 좌표를 보관합니다. 같은 경로·쿼리의 재로딩·discard 복원·history 탐색에서만 첫 렌더링 뒤 한 번 위치를 보정합니다. 24시간이 지난 기록, fragment 이동, 인증 파라미터가 있는 URL과 새 탐색은 제외하며, 사용자의 스크롤 입력은 지연된 복원을 취소합니다. 일반 렌더링이나 로그인 목적지 복원에서 저장 좌표를 강제로 적용하지 않습니다. 탭 전환·freeze/resume만으로 새로고침이나 재로그인을 유발하지 않습니다.
 
 `PlatoCalendar`와 `BbitsCalendar`는 각각 `init` → `mountWidgetSkeleton` → `loadCachedData` → `fetchAndRefreshData` → `fetchCourseStatuses`/`fetchCalendarDoc` → `parseCalendarDoc` → `render` 순서로 동작합니다. PLATO는 이 기본 렌더링 뒤 `fetchPreciseTimes`로 정확한 시각을 보강하여 다시 렌더링합니다. 상세 요청은 최대 4개씩 빈 슬롯을 채우고 60초 이내의 시각 캐시를 재사용하며, 강좌 목록의 마감일이 달라지면 해당 캐시를 무효화합니다. 다른 학기 월은 현재 월의 상세 보강 이후 동기화합니다. 해당 사이트의 최상위 프레임과 대상 페이지인지 확인하고 위젯 ID로 중복 삽입을 막습니다. 토글 변경은 `chrome.storage.onChanged`로 반영합니다. 월 이동은 먼저 캐시를 표시하고 60초가 지난 월은 백그라운드에서 재조회하며, `navRequestId`로 오래된 응답의 화면 반영을 막습니다. 요청은 8초 제한과 `credentials: same-origin`을 사용합니다. 실패하면 기존 화면을 유지하고 콘솔에 오류를 남깁니다.

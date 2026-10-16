@@ -57,6 +57,39 @@ test('core calendar renders before slow precise-time requests finish', async () 
   assert.deepEqual(renders.map(item => item.enriched), [false, true]);
 });
 
+test('date-only periods spanning months and years are not clipped to the visible month', () => {
+  const { cal } = calendar();
+  const video = {type:'강의',startDay:12,dueDay:31,parsedPeriod:'10월 12일 ~ 11월 29일'};
+  assert.equal(cal.reconcileDeadlineData({curYear:2026,curMonth:10,activities:[{...video}]}).activities.length,0);
+  const november = cal.reconcileDeadlineData({curYear:2026,curMonth:11,activities:[{...video}]}).activities[0];
+  assert.deepEqual([november.dueYear,november.dueMonth,november.dueDay],[2026,11,29]);
+  const crossYear = {...video,parsedPeriod:'12월 12일 ~ 1월 29일'};
+  assert.equal(cal.reconcileDeadlineData({curYear:2026,curMonth:12,activities:[{...crossYear}]}).activities.length,0);
+  const january = cal.reconcileDeadlineData({curYear:2027,curMonth:1,activities:[{...crossYear}]}).activities[0];
+  assert.deepEqual([january.dueYear,january.dueMonth,january.dueDay],[2027,1,29]);
+});
+
+test('unverified VOD duration at month boundary is not a fabricated deadline, single-day assignments stay', () => {
+  const { cal } = calendar();
+  const data = cal.reconcileDeadlineData({curYear:2026,curMonth:10,days:[{day:31}],activities:[
+    {type:'강의',startDay:12,dueDay:31}, {type:'과제',startDay:31,dueDay:31}
+  ]});
+  assert.equal(data.activities.length,1);
+  assert.equal(data.activities[0].type,'과제');
+  assert.equal(data.hasUnresolvedDeadlines,true);
+  assert.equal(data.days[0].events.length,1);
+});
+
+test('cache repair preserves an explicit year and tolerates malformed period fields', () => {
+  const { cal } = calendar();
+  const data = cal.reconcileDeadlineData({curYear:2026,curMonth:10,activities:[
+    {type:'강의',dueYear:2027,dueMonth:10,dueDay:20,parsedPeriod:'10월 20일'},
+    {type:'과제',dueDay:20,parsedPeriod:42}
+  ]});
+  assert.equal(data.activities.length,1);
+  assert.equal(data.activities[0].type,'과제');
+});
+
 test('late detail result cannot replace a newly selected month', async () => {
   const { cal } = calendar();
   let finishDetails;
