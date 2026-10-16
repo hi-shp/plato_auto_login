@@ -27,7 +27,7 @@
 | `사진/` | 기존 사용자 작업 자료. 배포 ZIP에 포함하지 않음. |
 
 릴리스 도구는 `node --check`로 JavaScript 구문을 검사합니다. `python scripts/verify.py`는 단위 테스트와 Selenium 브라우저 테스트를 함께 실행합니다. Chrome E2E는 임시 프로필에 테스트용 확장 프로그램을 WebDriver BiDi로 설치하고 로컬 LMS Fixture에서 실행합니다.
-manifest 버전은 서울 날짜 `YYYY.MM.DD`를 사용합니다. `release.py`는 임시 ZIP을 먼저 검증한 뒤 프로젝트 루트의 `plato.zip`을 안전하게 교체합니다. 파일명과 무관하게 ZIP 내부 manifest 버전과 현재 소스를 확인합니다.
+manifest 버전은 한국 작업 날짜 + 1일의 `YYYY.MM.DD`를 사용합니다. 같은 날의 수정은 같은 버전을 유지하며 월말·연말도 실제 달력으로 계산합니다. 실제 웹스토어 게시 날짜를 보장하는 값은 아닙니다. `release.py`는 임시 ZIP을 먼저 검증한 뒤 프로젝트 루트의 `plato.zip`을 안전하게 교체합니다. 파일명과 무관하게 ZIP 내부 manifest 버전과 현재 소스를 확인합니다.
 
 ## 주요 호출 흐름
 
@@ -48,6 +48,8 @@ manifest 버전은 서울 날짜 `YYYY.MM.DD`를 사용합니다. `release.py`�
 API 동작 근거: [Chrome webNavigation](https://developer.chrome.com/docs/extensions/reference/api/webNavigation), [Chrome storage.session](https://developer.chrome.com/docs/extensions/reference/api/storage). 추가 권한은 `webNavigation` 하나다. `tabs`·`webRequest` 권한과 외부 공개 메시지 인터페이스는 추가하지 않는다.
 
 ## 캘린더와 데이터
+
+캘린더가 직접 삽입된 부모 영역에만 CSS `overflow-anchor: none`을 적용합니다. 비동기 삽입 높이가 Chrome의 재로딩 복원 위치에 더해지는 것을 막고, 위젯이 제거되면 자동 해제합니다. `prepareCalendarViewport()`는 탭별 `sessionStorage`에 마지막 스크롤 좌표를 보관합니다. 같은 경로·쿼리의 재로딩·discard 복원·history 탐색에서만 첫 렌더링 뒤 한 번 위치를 보정합니다. 24시간이 지난 기록, fragment 이동, 인증 파라미터가 있는 URL과 새 탐색은 제외하며, 사용자의 스크롤 입력은 지연된 복원을 취소합니다. 일반 렌더링이나 로그인 목적지 복원에서 저장 좌표를 강제로 적용하지 않습니다. 탭 전환·freeze/resume만으로 새로고침이나 재로그인을 유발하지 않습니다.
 
 `PlatoCalendar`와 `BbitsCalendar`는 각각 `init` → `mountWidgetSkeleton` → `loadCachedData` → `fetchAndRefreshData` → `fetchCourseStatuses`/`fetchCalendarDoc` → `parseCalendarDoc` → `render` 순서로 동작합니다. PLATO는 이 기본 렌더링 뒤 `fetchPreciseTimes`로 정확한 시각을 보강하여 다시 렌더링합니다. 상세 요청은 최대 4개씩 빈 슬롯을 채우고 60초 이내의 시각 캐시를 재사용하며, 강좌 목록의 마감일이 달라지면 해당 캐시를 무효화합니다. 다른 학기 월은 현재 월의 상세 보강 이후 동기화합니다. 해당 사이트의 최상위 프레임과 대상 페이지인지 확인하고 위젯 ID로 중복 삽입을 막습니다. 토글 변경은 `chrome.storage.onChanged`로 반영합니다. 월 이동은 먼저 캐시를 표시하고 60초가 지난 월은 백그라운드에서 재조회하며, `navRequestId`로 오래된 응답의 화면 반영을 막습니다. 요청은 8초 제한과 `credentials: same-origin`을 사용합니다. 실패하면 기존 화면을 유지하고 콘솔에 오류를 남깁니다.
 

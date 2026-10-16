@@ -32,6 +32,7 @@ class LoginHandler(BaseHTTPRequestHandler):
         data = body.encode('utf-8')
         self.send_response(status)
         self.send_header('Content-Type', 'text/html; charset=utf-8')
+        self.send_header('Cache-Control', 'no-store')
         self.send_header('Content-Length', str(len(data)))
         query_case = parse_qs(urlparse(self.path).query).get('case')
         if query_case:
@@ -45,6 +46,7 @@ class LoginHandler(BaseHTTPRequestHandler):
     def redirect(self, url):
         self.send_response(302)
         self.send_header('Location', url)
+        self.send_header('Cache-Control', 'no-store')
         self.send_header('Content-Length', '0')
         self.end_headers()
 
@@ -88,6 +90,8 @@ class LoginHandler(BaseHTTPRequestHandler):
             denied = '<div class="alert">접근 권한 없음</div>' if params.get('denied') else ''
             links = ''.join(f'<a id="{kind}-link" href="/mod/{kind}/view.php?id={number}&case={case}&action=view#intro" target="_blank" rel="noopener noreferrer">Anonymous {kind}</a>' for kind, number in [('assign', 42), ('vod', 43), ('quiz', 44)])
             body = f'<body class="loggedin"><a class="btn-channel" id="home-menu" href="/?case={case}">홈</a>{links}<div id="region-main"><div class="open-content">Anonymous page{denied}</div></div>{notice}<script>window.homeFrames=0;if(location.pathname==="/"){{const sample=()=>{{homeFrames++;requestAnimationFrame(sample)}};requestAnimationFrame(sample)}};</script>'
+            if params.get('long') == ['1']:
+                body = body.replace('Anonymous page', '<div style="height:2400px">Anonymous long course list</div>')
             if parsed.path == '/' and params.get('slow') == ['1']:
                 body += '<script src="/slow.js"></script>'
             body += '</body>'
@@ -177,6 +181,12 @@ chrome.runtime.onMessage.addListener((m,s,reply)=>{
   if(m.action==='expire')await chrome.storage.session.set({['plato_navigation_'+s.tab.id]:{
    url:m.url,reason:'click',pending:true,createdAt:Date.now()-360000}});
   if(m.action==='reset')await navigationQueue(s.tab.id,()=>null);
+  if(m.action==='discard'){
+   const tab=await chrome.tabs.discard(m.tabId);reply({tabId:tab.id,discarded:tab.discarded});return;
+  }
+  if(m.action==='activate'){
+   await chrome.tabs.update(m.tabId,{active:true});reply({activated:true});return;
+  }
   reply({tabId:s.tab.id,states:await chrome.storage.session.get(null)});
  })();return true;
 });
@@ -363,6 +373,73 @@ class NavigationExtensionTest(unittest.TestCase):
         self.driver.execute_script("document.body.insertAdjacentHTML('beforeend','<div class=\"modal show\">세션 만료<button class=btn-primary>다시 로그인</button></div>');document.querySelector('.modal button').onclick=()=>location.href=arguments[0]", self.origin + '/login/index.php?case=' + self.case)
         self.wait.until(lambda _: self.case in LoginHandler.authenticated)
         self.assert_stays(expected)
+
+    def test_long_course_reload_keeps_position_without_reauthentication(self):
+        LoginHandler.authenticated.add(self.case)
+        expected = self.origin + COURSE + '?case=' + self.case + '&long=1'
+        self.driver.get(expected)
+        self.wait.until(lambda d: d.execute_script("return document.documentElement.dataset.calendarReady==='1'"))
+        self.driver.execute_script('scrollTo({top:700,behavior:"instant"})')
+        self.driver.execute_async_script('const done=arguments[0];requestAnimationFrame(()=>requestAnimationFrame(done))')
+        count = sum(e['path'] == '/authenticate' and e['case'] == self.case for e in LoginHandler.events)
+        self.driver.refresh()
+        self.wait.until(lambda d: d.execute_script("return document.documentElement.dataset.calendarReady==='1'"))
+        self.assert_stays(expected)
+        self.assertAlmostEqual(self.driver.execute_script('return scrollY'), 700, delta=2)
+        self.assertEqual(sum(e['path'] == '/authenticate' and e['case'] == self.case for e in LoginHandler.events), count)
+
+    def test_discarded_assignment_expired_before_html_restores_exact_url(self):
+        LoginHandler.authenticated.add(self.case)
+        expected = self.origin + f'/mod/assign/view.php?id=409&case={self.case}&action=view#intro'
+        self.driver.get(expected)
+        self.assert_stays(expected)
+        tab_id = self.control()['tabId']
+        LoginHandler.authenticated.discard(self.case)
+        self.driver.switch_to.new_window('tab')
+        self.driver.get(self.origin + '/fixture-seed')
+        self.wait.until(lambda d: d.execute_script("return document.documentElement.dataset.seeded==='1'"))
+        helper = self.driver.current_window_handle
+        discarded = self.control('discard', tabId=tab_id)
+        self.assertTrue(discarded['discarded'])
+        self.assertEqual(self.control('activate', tabId=discarded['tabId']), {'activated': True})
+        self.wait.until(lambda d: len(d.window_handles) == 2)
+        self.driver.switch_to.window(next(h for h in self.driver.window_handles if h != helper))
+        try:
+            self.wait.until(lambda _: self.case in LoginHandler.authenticated)
+        except Exception:
+            page = self.driver.execute_script('return {discarded:document.wasDiscarded,ready:document.readyState,classes:document.body.className,hasForm:!!document.querySelector("form")}')
+            self.fail(f'Anonymous discard recovery: {self.driver.current_url}; '
+                      f'page={page}; '
+                      f'paths={[e["path"] for e in LoginHandler.events if e["case"] == self.case]}')
+        self.assert_stays(expected)
+        paths = [e['path'] for e in LoginHandler.events if e['case'] == self.case]
+        self.assertGreaterEqual(sum(p.startswith('/mod/assign/view.php?id=409') for p in paths), 2)
+        self.assertTrue(any(p.startswith('/login/') for p in paths))
+        self.assertTrue(any(p.startswith('/sso/') for p in paths))
+        self.assertEqual(paths.count('/authenticate'), 1)
+
+    def test_long_course_session_expiry_returns_without_bottom_jump(self):
+        LoginHandler.authenticated.add(self.case)
+        expected = self.origin + COURSE + '?case=' + self.case + '&long=1'
+        self.driver.get(expected)
+        self.wait.until(lambda d: d.execute_script("return document.documentElement.dataset.calendarReady==='1'"))
+        self.driver.execute_script('scrollTo({top:700,behavior:"instant"})')
+        LoginHandler.authenticated.discard(self.case)
+        self.driver.execute_script('''
+document.body.insertAdjacentHTML('beforeend','<div class="modal show">세션 만료<button class="btn-primary">다시 로그인</button></div>');
+document.querySelector('.modal button').onclick=()=>location.href=arguments[0];
+''', self.origin + '/login/index.php?case=' + self.case)
+        self.wait.until(lambda _: self.case in LoginHandler.authenticated)
+        self.assert_stays(expected)
+        self.wait.until(lambda d: d.execute_script("return document.documentElement.dataset.calendarReady==='1'"))
+        # Login recovery promises the exact destination, not scroll persistence
+        # through unrelated authentication documents. It must never force bottom.
+        self.assertTrue(self.driver.execute_script('return scrollY < document.documentElement.scrollHeight-innerHeight-100'))
+        restored = self.driver.execute_script('return scrollY')
+        time.sleep(2.2)  # Include the content script's next login-monitor tick.
+        self.assertEqual(self.driver.current_url, expected)
+        self.assertAlmostEqual(self.driver.execute_script('return scrollY'), restored, delta=2)
+        self.assertEqual(sum(e['path'] == '/authenticate' and e['case'] == self.case for e in LoginHandler.events), 1)
 
     def test_two_tabs_authenticate_independently(self):
         self.calendar()

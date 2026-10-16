@@ -1,5 +1,18 @@
 # 실사용 확인 및 재현 테스트
 
+## 탭 재로딩·스크롤 복원 수정 (2026-10-16 작업 / v2026.10.17)
+
+- 최종 `python scripts/verify.py --package`: PASS 135, FAIL 0, NOT RUN 1(인증된 실사이트 종합 확인). JavaScript 단위 64개, 릴리스 리소스 7개, 실제 격리 Chrome E2E 60개, 소스 구문·Git 공백·ZIP 생성·ZIP 재검증 각 1개가 통과했다. 실행 파일 12개의 루트 `plato.zip`을 현재 소스로 검증했다. 원시 결과는 로컬 `dist/e2e/verify-scroll-final.log`에 보관한다.
+- 익명 localhost HTML의 2400px 강좌 목록 앞에 실제 확장 프로그램의 캘린더를 비동기로 삽입했다. 세션 만료가 없는 Chrome 재로딩에서 PLATO와 BBITS 모두 `scrollY 250 → 1072`, `700 → 1522`로 822px 밀리는 것을 재현했다. 같은 문서의 일반 `render()`만 실행하면 이동하지 않았다. 실제 PLATO에서 보고된 현상이 같은 원인이라고 단정하지 않는다.
+- 위젯의 직접 부모만 `overflow-anchor: none`으로 처리해 삽입 높이가 복원 좌표에 더해지지 않도록 했다. 초기에 잠깐만 해제했다가 다시 켜는 방식은 재이동이 발생해 채택하지 않았다. 캘린더를 제거하면 해당 CSS 선택자가 더 이상 일치하지 않는다. body/html의 스크롤이나 전역 `history.scrollRestoration`은 변경하지 않는다.
+- 하단 위치는 캘린더 삽입 전 문서 높이 때문에 Chrome이 복원 좌표를 잘라내는 경우가 있었다(2500px → 1831px). 탭별 세션 저장소의 같은 경로·쿼리 좌표를 초기 렌더링 뒤 한 번 보정한다. 새 탐색·fragment·오래되거나 손상된 기록·인증 파라미터는 제외하고 직접 스크롤 입력 시 복원을 취소한다. 다른 탭의 위치를 읽거나 로그인 중간 화면에서 강제로 좌표를 적용하지 않는다.
+- `tests/e2e/test_scroll_restore.py`는 현재 소스를 임시 확장 프로그램으로 실제 격리 Chrome에 설치한다. 두 사이트의 0/250/700/1200/2500px 재로딩, 빈/이전/손상 캐시·실패/시간 초과·새로고침, 실제 `chrome.tabs.discard()` 후 재활성화(`document.wasDiscarded` 확인), CDP freeze/resume, 탭 전환, history 복귀, fragment 및 상세 패널의 명시적 스크롤을 검사한다. Chrome이 discard 뒤 반환한 새 탭 ID와 새 렌더러 연결을 사용한다. 제품 권한·서비스 워커에 테스트 제어 API를 추가하지 않았다.
+- `tests/e2e/test_navigation_extension.py`에는 긴 교과과정에서 정상 세션 재로딩(재인증 없음·700px 유지)과 세션 만료 모달 → 로그인 POST → SSO 중계 → 정확한 원래 URL 도착 → 다음 로그인 감시 주기에도 하단 점프 없음 검사를 추가했다. 인증을 거친 화면 전환에서 이전 좌표의 정확한 유지까지 보장하는 검사는 아니다.
+- 과제 탭의 실제 discard와 세션 만료가 겹치는 사례도 검사한다. 모의 인증 서버에 `Cache-Control: no-store`를 적용해 이전 HTML 재사용을 막고, 재요청·로그인 POST·SSO가 실제로 발생한 뒤 쿼리·fragment를 포함한 원래 URL에 도착하는지 확인한다. 수정본은 별도의 `tabs`·`history` 권한을 추가하지 않는다.
+- 위치 보정 단위 검사에는 새 주소/다른 쿼리, fragment, 24시간 만료·손상 데이터, 사용자 입력 우선과 반복 초기화의 이벤트 중복 방지가 포함된다. 릴리스 검사는 한국 작업 날짜 + 1일과 월말·연말·윤년 및 같은 날 동일 버전 재사용을 검사한다.
+- 재현 명령: `python -m unittest discover -s tests/e2e -p test_scroll_restore.py -v`, `python -m unittest discover -s tests/e2e -p test_navigation_extension.py -k long_course -v`. 전체 필수 검사는 `python scripts/verify.py`, 패키징은 통과 후 `python scripts/verify.py --package`다.
+- 실제 사용자의 Chrome에 수정본을 적용한 PLATO/공유대학 로그인·장시간 방치·자동 탭 폐기 및 실사이트 스크롤은 미검증이다. 짧은 CDP lifecycle 전환을 수 시간 방치와 동일하게 취급하지 않는다. history 복귀 검사는 실행하지만 BFCache 사용 자체를 강제·보장하지 않는다. 웹스토어 업로드·게시와 실제 과제 제출은 하지 않는다.
+
 ## 탭별 로그인 목적지와 초기 홈 이동 (2026-10-14)
 
 - 최종 `python scripts/verify.py --package`: PASS 121, FAIL 0, NOT RUN 1(인증된 실사이트 로그인·세션 만료 종합 검사). JavaScript 단위 60개, 릴리스 리소스 6개, Chrome Fixture·확장 프로그램 E2E 51개와 구문·Git 공백·ZIP 생성·ZIP 재검증 각 1개가 통과했다. `2026.10.14`의 루트 `plato.zip`은 실행 파일 12개이며 소스와 일치한다.

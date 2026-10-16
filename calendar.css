@@ -848,3 +848,11 @@
   }
 }
 
+:has(> #plato-calendar-widget),
+:has(> #bbits-calendar-widget) {
+  /* Mount/cache updates must not add widget height to Chrome's restored scroll.
+     Only the calendar's insertion container opts out; native restoration,
+     explicit detail-panel scrolling and unrelated page regions stay enabled. */
+  overflow-anchor: none !important;
+}
+

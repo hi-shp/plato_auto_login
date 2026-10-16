@@ -1,4 +1,4 @@
-"""Run the regression gate; --package safely rebuilds today's date-only ZIP.
+"""Run the regression gate; --package safely rebuilds the next-day date-only ZIP.
 
 The browser suite uses isolated, anonymous fixtures and installs a temporary
 copy of this extension. It never submits coursework or uses saved credentials.
@@ -52,7 +52,7 @@ def run_group(name: str, command: list[str]) -> dict:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--package", action="store_true",
-                        help="after all tests pass, verify and replace project-root plato.zip with today's date version")
+                        help="after all tests pass, verify and replace plato.zip with the Asia/Seoul date + 1 day version")
     args = parser.parse_args()
     commands = [
         ("Release source and JavaScript syntax", [sys.executable, "scripts/release.py", "--check"]),

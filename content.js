@@ -1,3 +1,60 @@
+// Chrome may restore against the shorter, pre-calendar document and clamp a
+// lower viewport. Correct that once, after the initial grid, for this same tab
+// and page only. Never override a new navigation, fragment or user input.
+const prepareCalendarViewport = prefix => {
+  const controllers = prepareCalendarViewport.controllers ||= new Map();
+  controllers.get(prefix)?.();
+  const key = `${prefix}_calendar_viewport`;
+  const navigation = performance.getEntriesByType('navigation')[0];
+  const page = location.pathname + location.search;
+  if (location.hash || [...new URLSearchParams(location.search).keys()].some(name =>
+    /^(?:sesskey|token|access_token|id_token|password|ticket|samlresponse|code)$/i.test(name))) return null;
+  let saved;
+  try { saved = JSON.parse(sessionStorage.getItem(key) || 'null'); } catch (_) {}
+  let pending = !!saved && saved.page === page && Number.isFinite(saved.x) && Number.isFinite(saved.y) &&
+    saved.x >= 0 && saved.y >= 0 && Date.now() >= saved.at && Date.now() - saved.at < 86400000 &&
+    (document.wasDiscarded || ['reload', 'back_forward'].includes(navigation?.type));
+  let cancelled = false;
+  let timer;
+  const save = () => {
+    clearTimeout(timer);
+    if (pending) return;
+    try { sessionStorage.setItem(key, JSON.stringify({ page, x: window.scrollX, y: window.scrollY, at: Date.now() })); } catch (_) {}
+  };
+  const onScroll = () => { clearTimeout(timer); timer = setTimeout(save, 150); };
+  const cancel = event => {
+    if (!event.isTrusted) return;
+    if (event.type === 'keydown' && !['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' '].includes(event.key)) return;
+    cancelled = true;
+    pending = false;
+  };
+  const inputs = ['wheel', 'touchstart', 'pointerdown', 'keydown'];
+  inputs.forEach(type => window.addEventListener(type, cancel, { passive: true }));
+  window.addEventListener('scroll', onScroll, { passive: true });
+  window.addEventListener('pagehide', save);
+  const onVisibility = () => { if (document.hidden) save(); };
+  document.addEventListener('visibilitychange', onVisibility);
+  controllers.set(prefix, () => {
+    clearTimeout(timer);
+    cancelled = true;
+    pending = false;
+    inputs.forEach(type => window.removeEventListener(type, cancel));
+    window.removeEventListener('scroll', onScroll);
+    window.removeEventListener('pagehide', save);
+    document.removeEventListener('visibilitychange', onVisibility);
+  });
+  return () => {
+    const finish = () => requestAnimationFrame(() => requestAnimationFrame(() => {
+      if (pending && !cancelled) window.scrollTo({ left: saved.x, top: saved.y, behavior: 'instant' });
+      pending = false;
+      inputs.forEach(type => window.removeEventListener(type, cancel));
+      save();
+    }));
+    if (document.readyState === 'complete') finish();
+    else window.addEventListener('load', finish, { once: true });
+  };
+};
+
 const ensureMonthGridData = (data, fallbackYear, fallbackMonth) => {
   const now = new Date();
   const year = Number.isInteger(data.curYear) && data.curYear >= 1900 && data.curYear <= 9999
@@ -282,6 +339,7 @@ const PlatoCalendar = {
       </div>
     `;
 
+    this.finishViewportRestore = prepareCalendarViewport('plato');
     target.insertBefore(widget, target.firstChild);
 
     // 이벤트 바인딩: 새로고침 버튼 (버블링 방지)
@@ -1169,6 +1227,8 @@ const PlatoCalendar = {
 
     this.renderLargeDaysGrid(days, curYear, curMonth);
     this.renderDetailPanel();
+    this.finishViewportRestore?.();
+    this.finishViewportRestore = null;
   },
 
   renderLargeDaysGrid(days, curYear, curMonth) {
@@ -1619,6 +1679,7 @@ const BbitsCalendar = {
       </div>
     `;
 
+    this.finishViewportRestore = prepareCalendarViewport('bbits');
     if (courseLists && courseLists.parentElement) {
       courseLists.parentElement.insertBefore(widget, courseLists);
     } else {
@@ -2379,6 +2440,8 @@ const BbitsCalendar = {
 
     this.renderLargeDaysGrid(days, curYear, curMonth);
     this.renderDetailPanel();
+    this.finishViewportRestore?.();
+    this.finishViewportRestore = null;
   },
 
   renderLargeDaysGrid(days, curYear, curMonth) {

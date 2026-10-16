@@ -59,12 +59,21 @@ class ReleaseTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "differs from local source"):
             release.verify_zip(package, files)
 
-    def test_release_version_must_equal_seoul_date(self):
-        release.validate_packaging_version("2026.10.12", today=date(2026, 10, 12))
+    def test_release_version_must_equal_next_seoul_date(self):
+        release.validate_packaging_version("2026.10.13", today=date(2026, 10, 12))
         with self.assertRaisesRegex(ValueError, "YYYY.MM.DD"):
             release.validate_packaging_version("2026.10.12.1", today=date(2026, 10, 12))
         with self.assertRaisesRegex(ValueError, "Asia/Seoul date"):
-            release.validate_packaging_version("2026.10.13", today=date(2026, 10, 12))
+            release.validate_packaging_version("2026.10.12", today=date(2026, 10, 12))
+
+    def test_next_day_policy_handles_month_year_and_leap_boundaries(self):
+        for today, version in ((date(2026, 10, 31), '2026.11.01'),
+                               (date(2026, 12, 31), '2027.01.01'),
+                               (date(2028, 2, 28), '2028.02.29'),
+                               (date(2028, 2, 29), '2028.03.01')):
+            with self.subTest(today=today):
+                release.validate_packaging_version(version, today=today)
+                release.validate_packaging_version(version, today=today)
 
     def test_project_root_upload_package_and_version_validation(self):
         files = release.collect_files(self.manifest)

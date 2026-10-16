@@ -14,7 +14,7 @@ import subprocess
 import sys
 import tempfile
 import zipfile
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from html.parser import HTMLParser
 from pathlib import Path, PurePosixPath
 from urllib.parse import unquote, urlsplit
@@ -168,8 +168,9 @@ def validate_packaging_version(version: str, *, today: date | None = None) -> No
     today = today or datetime.now(ZoneInfo("Asia/Seoul")).date()
     if not is_date_version(version):
         fail(f"Cannot package v{version}: version must use YYYY.MM.DD")
-    if version != today.strftime("%Y.%m.%d"):
-        fail(f"Release version v{version} must equal today's Asia/Seoul date ({today:%Y.%m.%d})")
+    expected = today + timedelta(days=1)
+    if version != expected.strftime("%Y.%m.%d"):
+        fail(f"Release version v{version} must equal the Asia/Seoul date + 1 day ({expected:%Y.%m.%d})")
 
 
 def collect_files(manifest: dict) -> set[str]:
