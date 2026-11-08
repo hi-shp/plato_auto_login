@@ -2841,6 +2841,20 @@ if (window.location.hostname.includes("plato.pusan.ac.kr")) {
   }
 }
 
+// MAIN-world acknowledgement means the official function was invoked, not that
+// authentication succeeded. Missing/late site scripts remain retryable.
+function runPnuFunction(type) {
+  let invoked = false;
+  const receive = event => { invoked = event.detail === `${type}:invoked`; };
+  window.addEventListener('PNU_FUNC_RESULT', receive);
+  try {
+    window.dispatchEvent(new CustomEvent('RUN_PNU_FUNC', { detail: { type } }));
+  } finally {
+    window.removeEventListener('PNU_FUNC_RESULT', receive);
+  }
+  return invoked;
+}
+
 const attemptLogin = () => {
   if (!chrome.runtime?.id) return;
   const navigation = window.__platoNavigation;
@@ -2867,24 +2881,20 @@ const attemptLogin = () => {
       navigation?.measure('content-settings-ready');
     
     if (host.includes("onestop.pusan.ac.kr") || host.includes("login.pusan.ac.kr")) {
+      // A failed member lookup is a server response, not another login prompt.
+      // Preserve its explanation and avoid an endless SSO round trip.
+      if (host === 'onestop.pusan.ac.kr' &&
+          new URL(href).searchParams.get('status') === 'fail') return;
+      const errorText = document.querySelector('.alert, .loginerrors, [role="alert"]')?.textContent || '';
+      if (host === 'login.pusan.ac.kr' &&
+          /아이디.*비밀번호|불일치|일치하지|로그인.*실패|invalid/i.test(errorText)) return;
       if (data.hjsPopupClose) {
         document.querySelectorAll('div[id^="popup_"], .modal-backdrop').forEach(el => el.remove());
       }
 
       const pwBtn = document.querySelector('a[href*="changeNextPw"]');
-      if (pwBtn && !pwBtn.dataset.done) {
-        pwBtn.dataset.done = "1";
-        
-        window.dispatchEvent(new CustomEvent("RUN_PNU_FUNC", { 
-          detail: { type: "CHANGE_PW" } 
-        }));
-
-        const clickEvt = new MouseEvent("click", {
-          view: window,
-          bubbles: true,
-          cancelable: true
-        });
-        pwBtn.dispatchEvent(clickEvt);
+      if (data.hjsToggle && pwBtn && !pwBtn.dataset.done) {
+        if (runPnuFunction('CHANGE_PW')) pwBtn.dataset.done = "1";
         return;
       }
 
@@ -2901,8 +2911,7 @@ const attemptLogin = () => {
         }
         
         if (loginArea && !loginArea.dataset.done) {
-          loginArea.dataset.done = "1";
-          window.dispatchEvent(new CustomEvent("RUN_PNU_FUNC", { detail: { type: "ONESTOP_SSO" } }));
+          if (runPnuFunction('ONESTOP_SSO')) loginArea.dataset.done = "1";
         }
       }
     }
@@ -2912,7 +2921,7 @@ const attemptLogin = () => {
       const b = document.querySelector('#btnLogin');
       const u = document.querySelector('#login_id') || document.querySelector('#username');
       const p = document.querySelector('#login_pw') || document.querySelector('#password');
-      if (b && u && p && !b.dataset.done) {
+      if (b && u && p && !b.disabled && !b.dataset.done && data.hjsId?.trim() && data.hjsPw) {
         b.dataset.done = "1";
         u.value = data.hjsId || ""; 
         p.value = data.hjsPw || "";

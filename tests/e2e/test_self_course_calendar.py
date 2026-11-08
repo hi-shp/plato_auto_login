@@ -192,8 +192,15 @@ document.dispatchEvent(new CustomEvent('self-fixture',{detail:{action:arguments[
         self.assertEqual(sum(a['done'] for a in november['items']), 1)
         self.assertFalse(any('id=901' in url for url in SelfCourseHandler.requests))
         self.driver.find_elements(By.CSS_SELECTOR, '#plato-large-days-grid .plato-large-day-cell:not(.empty)')[28].click()
+        # Cards fade in for 200ms. Selenium's visible text is empty while
+        # opacity is zero; wait for actual visible labels, not just DOM nodes.
+        self.wait.until(lambda d: len(d.find_elements(By.CSS_SELECTOR, '.plato-task-course')) == 8 and
+                        all(a.is_displayed() and '익명 자율강좌' in a.text
+                            for a in d.find_elements(By.CSS_SELECTOR, '.plato-task-course')))
         self.assertEqual(len(self.driver.find_elements(By.CSS_SELECTOR, '.plato-task-course')), 8)
-        self.assertTrue(all('익명 자율강좌' in a.text for a in self.driver.find_elements(By.CSS_SELECTOR, '.plato-task-course')))
+        labels = self.driver.find_elements(By.CSS_SELECTOR, '.plato-task-course')
+        self.assertTrue(all('익명 자율강좌' in a.text for a in labels),
+                        [(a.text, a.get_attribute('textContent'), a.is_displayed()) for a in labels])
         for _ in range(2):
             self.assertEqual(len(self.action('refresh')['items']), 8)
 
