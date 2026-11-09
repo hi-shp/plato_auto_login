@@ -37,7 +37,7 @@ manifest 버전은 한국 작업 날짜 + 1일의 `YYYY.MM.DD`를 사용합니�
 - PLATO: 일반 및 개발 도메인의 로그인 폼 탐색, 오류 메시지에 따른 재시도 중지, 세션 만료 재로그인. 정규 도메인은 클릭 URL → 직접 요청 URL → 세션 만료 전 페이지 → 기본 교과과정 순서로 로그인 후 목적지를 정합니다. `plato_login_intent`와 `plato_auto_login_pending`은 탭별 `sessionStorage`에 최대 5분 유지하고 목적지 도착을 확인한 뒤 정리합니다. 목적지는 HTTPS 정규 PLATO 호스트의 로그인·인증 경로 외로 제한하며 `wantsurl`에도 사용합니다. SSO 도메인을 거쳐 돌아와도 같은 탭의 PLATO 저장소를 읽습니다. 홈 클릭 표식과 캘린더 새로고침 표식 역시 `sessionStorage`에 있습니다. 모든 내부 페이지에서 실제 홈 메뉴를 누른 경우 홈을 1회 유지하고 홈 새로고침은 교과과정으로 이동합니다. 개발 도메인의 기존 URL 복원 동작은 유지합니다. `notice-early.js`는 홈 공지만 첫 표시 전에 숨기고, `notice.js`는 `.modal-ubboard-notice #popup-splide` 및 공식 `data-not-show-type="2"` 버튼을 확인해 처리합니다. 설정 ON 동안 표시 억제를 유지하고 Splide 초기화 후 공식 버튼을 실행합니다. 실패한 요청은 간격을 늘려 재시도하며 캐러셀 제거 후에만 완료로 기록합니다. 설정 OFF·설정 조회 실패·후속 스크립트 누락은 표시 억제를 해제합니다.
 - BBITS: `www.bbits.ac.kr` 모달과 `lms.bbits.ac.kr` 로그인 폼을 따로 처리하고 부산대학교 소속을 선택합니다. 로그인 후 LMS 대시보드에서 캘린더를 초기화합니다.
 
-## 탭별 로그인 목적지 (2026-10-14)
+## 탭별 로그인 목적지 (v2026.10.14)
 
 `webNavigation.onCreatedNavigationTarget`와 `onBeforeNavigate`에서 새 탭·직접 요청 URL을 HTML 도착 전에 포착한다. `onCommitted`의 서버 리다이렉트는 사용자 직접 요청으로 다시 기록하지 않는다. 현재 탭의 실제 클릭은 `navigation.js`가 기록한다. 우선순위는 클릭 → 직접 요청 → 이전 페이지 → 목적지 없는 첫 로그인의 교과과정이다. `noopener noreferrer`와 캘린더 카드 UI는 유지한다.
 
