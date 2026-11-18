@@ -114,6 +114,7 @@ const PlatoCalendar = {
   timeCache: {},
   timeRequests: new Map(),
   preciseRuns: new Map(),
+  feedbackCache: {},
 
   WEEKDAYS_KO: ['일', '월', '화', '수', '목', '금', '토'],
 
@@ -938,10 +939,10 @@ const PlatoCalendar = {
 
   async enrichMonthTimes(calDoc, statusMaps, year, month, reqId) {
     try {
-      const before = JSON.stringify(this.timeCache);
+      const before = JSON.stringify([this.timeCache, this.feedbackCache]);
       statusMaps.timeMap = await this.fetchPreciseTimes(calDoc, statusMaps, year, month);
       if (reqId !== this.navRequestId || year !== this.viewYear || month !== this.viewMonth) return;
-      if (before === JSON.stringify(this.timeCache)) {
+      if (before === JSON.stringify([this.timeCache, this.feedbackCache])) {
         // The first render already used every cached precise time.
         this.cachedData.timeEnriched = !this.cachedData.hasUnresolvedDeadlines;
         chrome.storage.local.set({ plato_calendar_data: this.cachedData,
@@ -973,6 +974,36 @@ const PlatoCalendar = {
     });
   },
 
+  readFeedbackDetail(doc, id) {
+    // The activity report can omit surveys entirely. Only the actual feedback
+    // view and its official completion alert establish personal completion;
+    // "진행중" describes the survey period, not the user's response state.
+    const link = doc.querySelector('#page-mod-header .mod-info[href*="/mod/feedback/view.php"]');
+    if (!link) return null;
+    try {
+      const url = new URL(link.getAttribute('href'), 'https://plato.pusan.ac.kr');
+      if (url.origin !== 'https://plato.pusan.ac.kr' || url.pathname !== '/mod/feedback/view.php' ||
+          url.searchParams.get('id') !== id) return null;
+    } catch (_) { return null; }
+    const result = {};
+    const alerts = [...doc.querySelectorAll('#region-main .alert, #region-main [role="alert"]')];
+    if (alerts.some(node => /^이미 활동을 완료했습니다\.?$/.test(node.textContent.replace(/\s+/g, ' ').trim()))) {
+      result.isCompleted = true;
+    }
+    const course = doc.querySelector('#pw-header .breadcrumb a[href*="/course/view.php"]');
+    if (course) {
+      try {
+        const url = new URL(course.getAttribute('href'), 'https://plato.pusan.ac.kr');
+        const courseId = url.searchParams.get('id');
+        if (url.origin === 'https://plato.pusan.ac.kr' && /^\d+$/.test(courseId || '')) {
+          result.courseId = courseId;
+          result.courseName = this.cachedCourses?.find(item => item.id === courseId)?.name || this.cleanCourseName(course.textContent);
+        }
+      } catch (_) { /* Leave course metadata unchanged if the breadcrumb is invalid. */ }
+    }
+    return result;
+  },
+
   async fetchPreciseTimes(calDoc, statusMaps, year, month) {
     const links = [...calDoc.querySelectorAll('li[data-region="event-item"] a[href*="/mod/"]')]
       .map(link => link.href).sort();
@@ -988,7 +1019,7 @@ const PlatoCalendar = {
   async fetchPreciseTimesImpl(calDoc, statusMaps, year, month) {
     const refs = new Map();
     calDoc.querySelectorAll('li[data-region="event-item"] a[href*="/mod/"]').forEach(link => {
-      const match = link.href.match(/\/mod\/(assign|vod|quiz)\/view\.php\?id=(\d+)/);
+      const match = link.href.match(/\/mod\/(assign|vod|quiz|feedback)\/view\.php\?id=(\d+)/);
       if (match) refs.set(match[2], link.href);
     });
     Object.values(statusMaps.globalStatusMap || {}).forEach(item => {
@@ -1000,15 +1031,17 @@ const PlatoCalendar = {
     const entries = [...refs].filter(([id, href]) => {
       try {
         const url = new URL(href, location.origin);
-        return url.hostname === 'plato.pusan.ac.kr' && /\/mod\/(assign|vod|quiz)\/view\.php$/.test(url.pathname) && url.searchParams.get('id') === id;
+        return url.origin === 'https://plato.pusan.ac.kr' && /\/mod\/(assign|vod|quiz|feedback)\/view\.php$/.test(url.pathname) && url.searchParams.get('id') === id;
       } catch (error) { return false; }
     });
     let cursor = 0;
     const worker = async () => {
       while (cursor < entries.length) {
         const [id, href] = entries[cursor++];
+        const isFeedback = new URL(href).pathname === '/mod/feedback/view.php';
         const listedDue = statusMaps.globalStatusMap?.[id]?.dueAt;
         const fresh = () => {
+          if (isFeedback) return false; // Personal completion must refresh even with a fresh time cache.
           const cached = this.timeCache[id];
           const sameDay = !listedDue || !cached?.dueAt ||
             new Date(listedDue).toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' }) ===
@@ -1021,7 +1054,7 @@ const PlatoCalendar = {
           if (statusMaps.globalStatusMap?.[id]) this.invalidateChangedTimes({
             globalStatusMap: { [id]: statusMaps.globalStatusMap[id] }
           });
-          if (fresh()) continue;
+          if (fresh() || (isFeedback && this.feedbackCache[id])) continue;
         }
         const request = (async () => {
         try {
@@ -1030,10 +1063,15 @@ const PlatoCalendar = {
           const html = await response.text();
           if (/id="form-login-sso"/.test(html)) return;
           const doc = new DOMParser().parseFromString(this.cleanHtmlForParsing(html), 'text/html');
+          if (isFeedback) {
+            const details = this.readFeedbackDetail(doc, id);
+            if (!details) return; // Login, access-denied or another activity page.
+            this.feedbackCache[id] = { ...this.feedbackCache[id], ...details };
+          }
           const rows = [...doc.querySelectorAll('li.cml-item')];
           const assignmentDue = rows.find(row => /종료\s*일시/.test(row.querySelector('.cml-label')?.textContent || ''))
             ?.querySelector('.cml-text')?.textContent || '';
-          const start = CalendarTime.parse(doc.querySelector('.timeopen')?.textContent || '');
+          const start = isFeedback ? null : CalendarTime.parse(doc.querySelector('.timeopen')?.textContent || '');
           const due = CalendarTime.parse(doc.querySelector('.timeclose')?.textContent || assignmentDue);
           if (due) this.timeCache[id] = {
             startAt: start?.at || null, startTimePrecision: start?.precision || null,
@@ -1149,9 +1187,10 @@ const PlatoCalendar = {
           }
 
           if (!statusInfo && modId) statusInfo = previous.get(modId);
-          const isCompleted = statusInfo ? statusInfo.isCompleted : false;
-          const courseName = statusInfo ? statusInfo.courseName : (inferredCourseName || '교과과정');
-          const parsedPeriod = statusInfo ? statusInfo.parsedPeriod : '';
+          if (modId && this.feedbackCache[modId]) statusInfo = { ...statusInfo, ...this.feedbackCache[modId] };
+          const isCompleted = !!statusInfo?.isCompleted;
+          const courseName = statusInfo?.courseName || inferredCourseName || '교과과정';
+          const parsedPeriod = statusInfo?.parsedPeriod || '';
           const cached = previous.get(modId);
           const cachedTime = !statusInfo?.dueAt && !statusInfo?.parsedPeriod && cached?.dueAt ? {
             startAt: cached.startAt, startTimePrecision: cached.startTimePrecision,

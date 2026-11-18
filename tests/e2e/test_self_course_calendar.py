@@ -24,6 +24,9 @@ class SelfCourseHandler(BaseHTTPRequestHandler):
     fail_list = False
     calendar_limit = 8
     fail_status = False
+    feedback = False
+    feedback_mode = 'done'
+    feedback_delay = 0
 
     def do_GET(self):
         url = urlparse(self.path)
@@ -60,6 +63,22 @@ class SelfCourseHandler(BaseHTTPRequestHandler):
             body = '<table>' + ''.join(f'<tr><td class="day" data-day="{day}"><span class="day-number">{day}</span><ul>'
                 + ''.join(f'<li data-region="event-item" data-event-component="mod_vod" data-event-eventtype="due"><a data-event-id="{i}" href="/mod/vod/view.php?id={i}">예시 영상 {i}</a></li>' for i in range(1, cls.calendar_limit + 1))
                 + '</ul></td></tr>' for day in range(start, end + 1)) + '</table>'
+            if cls.feedback and month == 11:
+                body += '<table>' + ''.join(f'<tr><td class="day" data-day="{day}"><ul><li data-region="event-item" data-event-component="mod_feedback"><a data-event-id="9" href="/mod/feedback/view.php?id=9">예시 만족도 조사 시작</a></li></ul></td></tr>' for day in [15,30]) + '</table>'
+        elif url.path == '/mod/feedback/view.php':
+            time.sleep(cls.feedback_delay)
+            if cls.feedback_mode == 'login':
+                self.send_response(302)
+                self.send_header('Location','/login/index.php')
+                self.end_headers()
+                return
+            if cls.feedback_mode == 'failure':
+                status = 503
+            header_id = '10' if cls.feedback_mode == 'wrong-id' else '9'
+            body = '<div id="pw-header"><ul class="breadcrumb"><li><a href="/course/view.php?id=900">익명 자율강좌</a></li></ul></div>'
+            body += f'<div id="page-mod-header"><a class="mod-info" href="/mod/feedback/view.php?id={header_id}">예시 만족도 조사</a><span class="timeopen">2026-11-15 00:00:00</span><span class="timeclose">2026-11-30 23:59:00</span></div>'
+            message = '이미 활동을 완료했습니다.' if cls.feedback_mode in ['done','wrong-id'] else '참여 기간이 진행중입니다.'
+            body += f'<div id="region-main"><div class="alert alert-danger" role="alert">{message}</div><p>시작 상태 진행중</p><p>완료 후 안내를 확인하세요.</p></div>'
         elif url.path == '/mod/vod/view.php':
             if cls.fail_details:
                 status, body = 503, 'Anonymous detail failure'
@@ -89,7 +108,8 @@ if(location.pathname==='/fixture'){
   items:c.cachedData.activities.map(a=>({id:a.modId,course:a.courseName,due:a.dueAt,month:a.dueMonth,day:a.dueDay,done:a.isCompleted,period:a.periodText})),
   grid:document.querySelectorAll('#plato-large-days-grid .plato-day-num').length});
  const render=c.render;
- c.render=function(){render.call(this);document.documentElement.dataset.calendarResult=JSON.stringify(summary())};
+ const stages=[];
+ c.render=function(){render.call(this);const result=summary();stages.push({time:performance.now(),...result});document.documentElement.dataset.calendarStages=JSON.stringify(stages);document.documentElement.dataset.calendarResult=JSON.stringify(result)};
  const run=async(action)=>{
   if(action==='init'){
    c.viewYear=2026;c.viewMonth=10;
@@ -161,6 +181,9 @@ class SelfCourseCalendarTest(unittest.TestCase):
         SelfCourseHandler.fail_list = False
         SelfCourseHandler.calendar_limit = 8
         SelfCourseHandler.fail_status = False
+        SelfCourseHandler.feedback = False
+        SelfCourseHandler.feedback_mode = 'done'
+        SelfCourseHandler.feedback_delay = 0
         SelfCourseHandler.requests = []
         self.driver.get(self.origin + '/fixture')
         self.wait_done()
@@ -256,6 +279,53 @@ document.dispatchEvent(new CustomEvent('self-fixture',{detail:{action:arguments[
         self.assertEqual(len(result['items']),8)
         self.assertEqual(sum(a['done'] for a in result['items']),1)
         self.assertTrue(all(a['course']=='익명 자율강좌' and a['day']==29 for a in result['items']))
+
+    def survey(self):
+        SelfCourseHandler.feedback = True
+        return next(a for a in self.action('november')['items'] if a['id']=='9')
+
+    def test_feedback_omitted_from_report_completes_after_first_core_render(self):
+        SelfCourseHandler.feedback_delay = 0.5
+        item = self.survey()
+        self.assertTrue(item['done'])
+        self.assertEqual(item['course'],'익명 자율강좌')
+        self.assertIn('마감:',item['period'])
+        self.assertIn('23:59:00',item['period'])
+        stages=json.loads(self.driver.execute_script('return document.documentElement.dataset.calendarStages'))
+        states=[(stage['time'],a['done']) for stage in stages if stage['month']==11 for a in stage['items'] if a['id']=='9']
+        self.assertFalse(states[0][1])
+        self.assertTrue(states[-1][1])
+        self.assertEqual(sum('/mod/feedback/view.php' in path for path in SelfCourseHandler.requests),1)
+        self.driver.find_elements(By.CSS_SELECTOR,'#plato-large-days-grid .plato-large-day-cell:not(.empty)')[29].click()
+        self.wait.until(lambda d: d.find_element(By.CSS_SELECTOR,'.plato-task-status-badge').text == '완료')
+        self.assertEqual(len(self.driver.find_elements(By.CSS_SELECTOR,'.plato-task-dday')),0)
+
+    def test_feedback_completion_refreshes_within_precise_time_ttl(self):
+        SelfCourseHandler.feedback_mode='pending'
+        self.assertFalse(self.survey()['done'])
+        SelfCourseHandler.feedback_mode='done'
+        item=next(a for a in self.action('refresh')['items'] if a['id']=='9')
+        self.assertTrue(item['done'])
+        self.assertEqual(sum('/mod/feedback/view.php' in path for path in SelfCourseHandler.requests),2)
+
+    def test_feedback_failure_preserves_verified_completed_cache(self):
+        self.assertTrue(self.survey()['done'])
+        SelfCourseHandler.feedback_mode='failure'
+        item=next(a for a in self.action('refresh')['items'] if a['id']=='9')
+        self.assertTrue(item['done'])
+        self.assertIn('23:59:00',item['period'])
+
+    def test_feedback_period_progress_and_instruction_are_not_completion(self):
+        SelfCourseHandler.feedback_mode='pending'
+        self.assertFalse(self.survey()['done'])
+
+    def test_feedback_redirect_to_login_does_not_mark_complete(self):
+        SelfCourseHandler.feedback_mode='login'
+        self.assertFalse(self.survey()['done'])
+
+    def test_feedback_wrong_activity_id_does_not_mark_complete(self):
+        SelfCourseHandler.feedback_mode='wrong-id'
+        self.assertFalse(self.survey()['done'])
 
 
 if __name__ == '__main__':

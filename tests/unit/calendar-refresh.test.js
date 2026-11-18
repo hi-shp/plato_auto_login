@@ -123,6 +123,22 @@ test('cached precise times do not cause an unnecessary second render', async () 
   assert.equal(cal.cachedData.timeEnriched, true);
 });
 
+test('feedback completion still updates the screen when no detailed time changes', async () => {
+  const { cal } = calendar();
+  const rendered = [];
+  cal.fetchCourseStatuses = async () => ({globalStatusMap:{},nameStatusMap:{}});
+  cal.fetchCalendarDoc = async () => ({});
+  cal.fetchPreciseTimes = async () => {
+    cal.feedbackCache['9'] = {isCompleted:true};
+    return cal.timeCache;
+  };
+  cal.parseCalendarDoc = () => ({curYear:2026,curMonth:10,days:[],activities:[],
+    completed:!!cal.feedbackCache['9']?.isCompleted});
+  cal.render = () => rendered.push(cal.cachedData.completed);
+  await cal.fetchAndRefreshData();
+  assert.deepEqual(rendered,[false,true]);
+});
+
 test('detail workers fill free slots and overlapping month refreshes share requests', async () => {
   const { cal } = calendar();
   let unblockSlow;
